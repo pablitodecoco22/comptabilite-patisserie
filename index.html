@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#222222">
+  <title>Comptabilité Pâtisserie</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #f7f4ef;
+      color: #333;
+    }
+    header {
+      background: #fff;
+      padding: 18px 20px;
+      text-align: center;
+      border-bottom: 1px solid #ddd;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    header h1 { margin: 0; font-size: 25px; }
+    header p { margin: 6px 0 0; color: #777; }
+    .sync-status {
+      display: inline-block;
+      margin-top: 10px;
+      padding: 5px 10px;
+      border-radius: 20px;
+      font-size: 12px;
+      background: #eee;
+    }
+    .sync-ok { background: #eaf7ed; color: #23733b; }
+    .sync-wait { background: #fff4df; color: #8a5a00; }
+    .sync-error { background: #fdeaea; color: #a52b2b; }
+
+    .container {
+      max-width: 900px;
+      margin: auto;
+      padding: 20px;
+    }
+    .card {
+      background: white;
+      border-radius: 14px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+    }
+    h2 { margin-top: 0; }
+    .toolbar {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .date-input {
+      flex: 1;
+      min-width: 180px;
+    }
+    .date-input input {
+      margin-top: 5px;
+    }
+    .price-row {
+      display: grid;
+      grid-template-columns: 90px 1fr 1fr 1fr 1fr;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .price { font-weight: bold; font-size: 18px; }
+    input {
+      width: 100%;
+      padding: 11px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      font-size: 16px;
+    }
+    label {
+      font-size: 13px;
+      color: #777;
+      display: block;
+      margin-bottom: 4px;
+    }
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+    .summary-box {
+      background: #f5f5f5;
+      border-radius: 10px;
+      padding: 15px;
+      text-align: center;
+    }
+    .summary-box strong {
+      display: block;
+      font-size: 23px;
+      margin-top: 5px;
+    }
+    .green { background: #eaf7ed; }
+    .orange { background: #fff4df; }
+    .blue { background: #eaf2ff; }
+    .red { background: #fdeaea; }
+    button {
+      border: 0;
+      border-radius: 9px;
+      padding: 13px 20px;
+      font-size: 16px;
+      cursor: pointer;
+      background: #222;
+      color: white;
+    }
+    button:hover { opacity: 0.9; }
+    .secondary { background: #666; }
+    .save {
+      width: 100%;
+      margin-top: 15px;
+      background: #222;
+    }
+    .message {
+      margin-top: 15px;
+      font-size: 14px;
+    }
+    .small {
+      font-size: 12px;
+      color: #777;
+      line-height: 1.45;
+    }
+    @media (max-width: 650px) {
+      .price-row {
+        grid-template-columns: 70px 1fr 1fr 1fr 1fr;
+        gap: 6px;
+      }
+      .price { font-size: 15px; }
+      input { padding: 9px 6px; font-size: 14px; }
+      .summary { grid-template-columns: 1fr; }
+      .container { padding: 12px; }
+      .card { padding: 15px; }
+    }
+  </style>
+
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="48x48" href="favicon-48.png">
+  <meta name="theme-color" content="#c9892b">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Compta Pâtisserie">
+  <link rel="apple-touch-icon" href="icon-192.png">
+
+</head>
+
+<body>
+<header>
+  <h1>🍰 Comptabilité Pâtisserie</h1>
+  <p>Gestion simple par prix — synchronisation téléphone ↔ ordinateur</p>
+  <span id="syncStatus" class="sync-status sync-wait">Connexion…</span>
+</header>
+
+<div class="container">
+
+  <div class="card">
+    <h2>📅 Journée</h2>
+    <div class="toolbar">
+      <div class="date-input">
+        <label for="date">Date</label>
+        <input type="date" id="date">
+      </div>
+      <button class="secondary" onclick="chargerJour()">Charger</button>
+    </div>
+    <p class="small">
+      Les chiffres sont enregistrés automatiquement. Si le téléphone n'a pas Internet,
+      ils restent enregistrés sur le téléphone et sont envoyés à Supabase dès que la connexion revient.
+    </p>
+  </div>
+
+  <div class="card">
+    <div class="price-row">
+      <div></div>
+      <div><label>Reste veille</label></div>
+      <div><label>Apportés</label></div>
+      <div><label>Total</label></div>
+      <div><label>Vendus</label></div>
+    </div>
+
+    <div id="prices"></div>
+
+    <button class="save" onclick="calculerEtSauver()">💾 Enregistrer / calculer</button>
+    <p id="message" class="message"></p>
+  </div>
+
+  <div class="card">
+    <h2>📊 Résultat du jour</h2>
+    <div class="summary">
+      <div class="summary-box blue">
+        Déjà là
+        <strong id="totalExisting">0</strong>
+      </div>
+      <div class="summary-box green">
+        Total disponible
+        <strong id="totalAvailable">0</strong>
+      </div>
+      <div class="summary-box orange">
+        Articles vendus
+        <strong id="totalSold">0</strong>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>💰 Chiffre d'affaires</h2>
+    <div class="summary">
+      <div class="summary-box">
+        Ventes brutes
+        <strong id="gross">0 RD$</strong>
+      </div>
+      <div class="summary-box orange">
+        Commission Lindo 15 %
+        <strong id="commission">0 RD$</strong>
+      </div>
+      <div class="summary-box green">
+        Net après Lindo
+        <strong id="net">0 RD$</strong>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>📋 Lecture rapide</h2>
+    <p class="small">
+      Le total se calcule automatiquement : reste de la veille + gâteaux apportés.
+      Les gâteaux restants en fin de journée correspondent au total moins les ventes.
+    </p>
+  </div>
+
+</div>
+
+<script>
+/*
+  ============================================================
+  CONFIGURATION SUPABASE
+  ============================================================
+  Cette clé est une clé "publishable/anon". Elle peut être
+  présente dans une application web. La sécurité des données
+  dépend des politiques RLS configurées dans Supabase.
+*/
+const SUPABASE_URL = "https://rutowrlwqhgzfsftrtxz.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ1dG93cmx3cWhnemZzZnRydHh6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk4MzczMjcsImV4cCI6MjEwNTQxMzMyN30.pVO5PlIdkwz0EzlysvmVBdsxkGrPN7kkwBXnpM4V7Es";
+
+const supabaseClient = window.supabase.createClient(
+  SUPABASE_URL,
+  SUPABASE_ANON_KEY
+);
+
+const prices = [60, 250, 260, 280, 300, 310];
+const LOCAL_PREFIX = "comptabilite_patisserie_";
+let saveTimer = null;
+let realtimeChannel = null;
+let currentDate = "";
+
+const dateInput = document.getElementById("date");
+const pricesContainer = document.getElementById("prices");
+const syncStatus = document.getElementById("syncStatus");
+const message = document.getElementById("message");
+
+function dateLocale(dateString) {
+  const d = new Date(dateString + "T12:00:00");
+  return d.toLocaleDateString("fr-FR", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric"
+  });
+}
+
+function setStatus(text, type = "wait") {
+  syncStatus.textContent = text;
+  syncStatus.className = "sync-status " +
+    (type === "ok" ? "sync-ok" :
+     type === "error" ? "sync-error" : "sync-wait");
+}
+
+function localKey(date) {
+  return LOCAL_PREFIX + date;
+}
+
+function getEmptyData() {
+  const data = {};
+  prices.forEach(price => {
+    data[price] = { existing: 0, brought: 0, sold: 0, removed: 0 };
+  });
+  return data;
+}
+
+function getFormData() {
+  const data = getEmptyData();
+
+  prices.forEach(price => {
+    data[price] = {
+      existing: Number(document.getElementById(`existing-${price}`).value) || 0,
+      brought: Number(document.getElementById(`brought-${price}`).value) || 0,
+      sold: Number(document.getElementById(`sold-${price}`).value) || 0,
+      removed: 0
+    };
+  });
+
+  return data;
+}
+
+function putLocal(date, data) {
+  localStorage.setItem(localKey(date), JSON.stringify({
+    date,
+    data,
+    savedAt: new Date().toISOString(),
+    pending: true
+  }));
+}
+
+function getLocal(date) {
+  try {
+    const raw = localStorage.getItem(localKey(date));
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function clearPendingLocal(date) {
+  const local = getLocal(date);
+  if (local) {
+    local.pending = false;
+    local.syncedAt = new Date().toISOString();
+    localStorage.setItem(localKey(date), JSON.stringify(local));
+  }
+}
+
+function displayData(data) {
+  prices.forEach(price => {
+    const row = data[price] || { existing: 0, brought: 0, sold: 0, removed: 0 };
+    document.getElementById(`existing-${price}`).value = row.existing ?? 0;
+    document.getElementById(`brought-${price}`).value = row.brought ?? 0;
+    document.getElementById(`available-${price}`).value =
+      (Number(row.existing) || 0) + (Number(row.brought) || 0);
+    document.getElementById(`sold-${price}`).value = row.sold ?? 0;
+  });
+
+  calculer(false);
+}
+
+function buildInputs() {
+  prices.forEach(price => {
+    const row = document.createElement("div");
+    row.className = "price-row";
+    row.innerHTML = `
+      <div class="price">${price} RD$</div>
+      <div>
+        <input type="number" min="0" step="1" value="0"
+               id="existing-${price}" inputmode="numeric" aria-label="Reste de la veille ${price} RD$">
+      </div>
+      <div>
+        <input type="number" min="0" step="1" value="0"
+               id="brought-${price}" inputmode="numeric" aria-label="Apportés ${price} RD$">
+      </div>
+      <div>
+        <input type="number" min="0" value="0" readonly
+               id="available-${price}" aria-label="Total ${price} RD$"
+               style="background:#f1f1f1;font-weight:bold;">
+      </div>
+      <div>
+        <input type="number" min="0" step="1" value="0"
+               id="sold-${price}" inputmode="numeric" aria-label="Vendus ${price} RD$">
+      </div>
+    `;
+    pricesContainer.appendChild(row);
+  });
+
+  document.querySelectorAll("#prices input").forEach(input => {
+    input.addEventListener("input", () => {
+      mettreAJourTotaux();
+      calculer(false);
+      programmerSauvegarde();
+    });
+  });
+}
+
+function mettreAJourTotaux() {
+  prices.forEach(price => {
+    const existing = Number(document.getElementById(`existing-${price}`).value) || 0;
+    const brought = Number(document.getElementById(`brought-${price}`).value) || 0;
+    document.getElementById(`available-${price}`).value = existing + brought;
+  });
+}
+
+function calculer(showMessage = true) {
+  const data = getFormData();
+
+  let totalExisting = 0;
+  let totalBrought = 0;
+  let totalAvailable = 0;
+  let totalSold = 0;
+  let gross = 0;
+
+  prices.forEach(price => {
+    const item = data[price];
+    totalExisting += item.existing;
+    totalBrought += item.brought;
+    totalAvailable += item.existing + item.brought;
+    totalSold += item.sold;
+    gross += item.sold * price;
+  });
+
+  const commission = gross * 0.15;
+  const net = gross - commission;
+
+  document.getElementById("totalExisting").textContent = totalExisting;
+  document.getElementById("totalAvailable").textContent = totalAvailable;
+  document.getElementById("totalSold").textContent = totalSold;
+
+  document.getElementById("gross").textContent =
+    gross.toLocaleString("fr-FR") + " RD$";
+
+  document.getElementById("commission").textContent =
+    commission.toLocaleString("fr-FR") + " RD$";
+
+  document.getElementById("net").textContent =
+    net.toLocaleString("fr-FR") + " RD$";
+
+  message.textContent = showMessage ? "✅ Calcul effectué." : "";
+  message.style.color = "#23733b";
+
+  return data;
+}
+
+async function sauverJour(date = currentDate, data = getFormData()) {
+  if (!date) return;
+
+  putLocal(date, data);
+
+  if (!navigator.onLine) {
+    setStatus("📱 Hors ligne — enregistré sur le téléphone", "wait");
+    return;
+  }
+
+  setStatus("☁️ Synchronisation…", "wait");
+
+  try {
+    const { error } = await supabaseClient
+      .from("comptabilite_jours")
+      .upsert(
+        {
+          jour: date,
+          donnees: data,
+          updated_at: new Date().toISOString()
+        },
+        { onConflict: "jour" }
+      );
+
+    if (error) throw error;
+
+    clearPendingLocal(date);
+    setStatus("✓ Synchronisé", "ok");
+  } catch (error) {
+    console.error("Erreur Supabase :", error);
+    setStatus("⚠️ En attente de connexion", "wait");
+  }
+}
+
+function programmerSauvegarde() {
+  clearTimeout(saveTimer);
+
+  currentDate = dateInput.value;
+  const data = getFormData();
+  putLocal(currentDate, data);
+
+  setStatus("💾 Enregistrement local…", "wait");
+
+  saveTimer = setTimeout(() => {
+    sauverJour(currentDate, data);
+  }, 700);
+}
+
+async function chargerDepuisSupabase(date) {
+  if (!navigator.onLine) return null;
+
+  try {
+    const { data, error } = await supabaseClient
+      .from("comptabilite_jours")
+      .select("jour, donnees, updated_at")
+      .eq("jour", date)
+      .maybeSingle();
+
+    if (error) throw error;
+
+    return data || null;
+  } catch (error) {
+    console.error("Lecture Supabase :", error);
+    return null;
+  }
+}
+
+async function chargerJour() {
+  currentDate = dateInput.value;
+  if (!currentDate) return;
+
+  message.textContent = "Chargement…";
+  setStatus("☁️ Recherche des données…", "wait");
+
+  const local = getLocal(currentDate);
+  const remote = await chargerDepuisSupabase(currentDate);
+
+  /*
+    Si une donnée distante existe, elle est prioritaire.
+    Sinon, on utilise la copie locale.
+  */
+  if (remote && remote.donnees) {
+    displayData(remote.donnees);
+    localStorage.setItem(localKey(currentDate), JSON.stringify({
+      date: currentDate,
+      data: remote.donnees,
+      savedAt: remote.updated_at || new Date().toISOString(),
+      pending: false,
+      syncedAt: new Date().toISOString()
+    }));
+    message.textContent = "☁️ Journée chargée depuis Supabase.";
+    setStatus("✓ Synchronisé", "ok");
+  } else if (local && local.data) {
+    displayData(local.data);
+    message.textContent = local.pending
+      ? "📱 Copie locale chargée — elle sera synchronisée automatiquement."
+      : "📱 Copie locale chargée.";
+    setStatus(
+      local.pending ? "📱 En attente de synchronisation" : "✓ Synchronisé",
+      local.pending ? "wait" : "ok"
+    );
+
+    if (navigator.onLine && local.pending) {
+      await sauverJour(currentDate, local.data);
+    }
+  } else {
+    displayData(getEmptyData());
+    message.textContent = "Nouvelle journée.";
+    setStatus(navigator.onLine ? "✓ Connecté" : "📱 Hors ligne", navigator.onLine ? "ok" : "wait");
+  }
+}
+
+async function calculerEtSauver() {
+  const data = calculer(true);
+  await sauverJour(currentDate, data);
+}
+
+async function synchroniserEnAttente() {
+  if (!navigator.onLine) {
+    setStatus("📱 Hors ligne", "wait");
+    return;
+  }
+
+  const local = getLocal(currentDate);
+  if (local && local.pending) {
+    await sauverJour(currentDate, local.data);
+  } else {
+    setStatus("✓ Synchronisé", "ok");
+  }
+}
+
+function activerTempsReel() {
+  if (realtimeChannel) {
+    supabaseClient.removeChannel(realtimeChannel);
+  }
+
+  realtimeChannel = supabaseClient
+    .channel("comptabilite-temps-reel")
+    .on(
+      "postgres_changes",
+      {
+        event: "*",
+        schema: "public",
+        table: "comptabilite_jours",
+        filter: `jour=eq.${currentDate}`
+      },
+      payload => {
+        if (!payload.new || !payload.new.donnees) return;
+
+        /*
+          Quand l'autre appareil modifie la journée, le navigateur
+          reçoit immédiatement la nouvelle valeur.
+        */
+        displayData(payload.new.donnees);
+        localStorage.setItem(localKey(currentDate), JSON.stringify({
+          date: currentDate,
+          data: payload.new.donnees,
+          savedAt: payload.new.updated_at || new Date().toISOString(),
+          pending: false,
+          syncedAt: new Date().toISOString()
+        }));
+        setStatus("✓ Mis à jour depuis l'autre appareil", "ok");
+      }
+    )
+    .subscribe(status => {
+      console.log("Realtime :", status);
+    });
+}
+
+dateInput.value = new Date().toISOString().slice(0, 10);
+
+window.addEventListener("online", async () => {
+  setStatus("🌐 Internet revenu — synchronisation…", "wait");
+  await synchroniserEnAttente();
+  await chargerJour();
+});
+
+window.addEventListener("offline", () => {
+  setStatus("📱 Hors ligne — les données restent sur l'appareil", "wait");
+});
+
+dateInput.addEventListener("change", async () => {
+  await chargerJour();
+  activerTempsReel();
+});
+
+buildInputs();
+mettreAJourTotaux();
+currentDate = dateInput.value;
+
+(async function init() {
+  if (!navigator.onLine) {
+    await chargerJour();
+    activerTempsReel();
+    return;
+  }
+
+  try {
+    const { error } = await supabaseClient
+      .from("comptabilite_jours")
+      .select("jour")
+      .limit(1);
+
+    if (error) throw error;
+
+    setStatus("✓ Connecté à Supabase", "ok");
+  } catch (error) {
+    console.error(error);
+    setStatus("⚠️ Supabase à configurer", "error");
+  }
+
+  await chargerJour();
+  activerTempsReel();
+})();
+</script>
+</body>
+</html>
