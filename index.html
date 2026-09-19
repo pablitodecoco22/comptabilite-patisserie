@@ -335,7 +335,6 @@ function displayData(data) {
     document.getElementById(`available-${price}`).value =
       (Number(row.existing) || 0) + (Number(row.brought) || 0);
     document.getElementById(`sold-${price}`).value = row.sold ?? 0;
-    document.getElementById(`removed-${price}`).value = row.removed ?? 0;
   });
 
   calculer(false);
@@ -392,7 +391,6 @@ function calculer(showMessage = true) {
   let totalBrought = 0;
   let totalAvailable = 0;
   let totalSold = 0;
-  let totalRemaining = 0;
   let gross = 0;
 
   prices.forEach(price => {
@@ -406,13 +404,10 @@ function calculer(showMessage = true) {
 
   const commission = gross * 0.15;
   const net = gross - commission;
-  const remaining = totalAvailable - totalSold;
-  totalRemaining = remaining;
 
   document.getElementById("totalExisting").textContent = totalExisting;
   document.getElementById("totalAvailable").textContent = totalAvailable;
   document.getElementById("totalSold").textContent = totalSold;
-  document.getElementById("totalRemaining").textContent = totalRemaining;
 
   document.getElementById("gross").textContent =
     gross.toLocaleString("fr-FR") + " RD$";
@@ -423,16 +418,8 @@ function calculer(showMessage = true) {
   document.getElementById("net").textContent =
     net.toLocaleString("fr-FR") + " RD$";
 
-  if (remaining < 0) {
-    message.textContent =
-      "⚠️ Attention : les ventes dépassent le nombre total de gâteaux disponibles.";
-    message.style.color = "#a52b2b";
-  } else {
-    message.textContent = showMessage
-      ? "✅ Calcul effectué."
-      : "";
-    message.style.color = "#23733b";
-  }
+  message.textContent = showMessage ? "✅ Calcul effectué." : "";
+  message.style.color = "#23733b";
 
   return data;
 }
