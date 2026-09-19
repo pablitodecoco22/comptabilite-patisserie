@@ -1,0 +1,16 @@
+COMPTABILITÉ PÂTISSERIE — NOUVELLE ICÔNE
+
+1. Sur GitHub, ouvre le dépôt comptabilite-patisserie.
+2. Supprime/remplace l'ancien index.html par le index.html de ce dossier.
+3. Ajoute aussi:
+   - manifest.webmanifest
+   - favicon-48.png
+   - icon-96.png
+   - icon-192.png
+   - icon-512.png
+4. Attends quelques minutes que GitHub Pages se mette à jour.
+5. Sur Android, supprime l'ancien raccourci de l'écran d'accueil.
+6. Ouvre Chrome sur l'adresse du site, puis ⋮ > Ajouter à l'écran d'accueil.
+7. Le nouveau raccourci utilisera la nouvelle icône.
+
+Le fichier index.html est basé sur la version finale fonctionnelle de l'application.
