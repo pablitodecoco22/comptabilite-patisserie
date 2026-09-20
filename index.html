@@ -973,5 +973,83 @@ currentDate = dateInput.value;
 })();
 </script>
 
+
+<script>
+(function(){
+  function fmtRD(n){ return Math.round(n||0).toLocaleString("fr-FR") + " RD$"; }
+  function weekStartISO(dateStr){
+    const d = new Date(dateStr + "T12:00:00");
+    const diff = (d.getDay() - 5 + 7) % 7;
+    d.setDate(d.getDate() - diff);
+    return d.toISOString().slice(0,10);
+  }
+  function weekLabel(startISO){
+    const s = new Date(startISO+"T12:00:00");
+    const e = new Date(s); e.setDate(e.getDate()+6);
+    return s.toLocaleDateString("fr-FR",{day:"2-digit",month:"2-digit",year:"numeric"})+
+      " → "+e.toLocaleDateString("fr-FR",{day:"2-digit",month:"2-digit",year:"numeric"});
+  }
+
+  async function loadWeekHistory(){
+    const body=document.getElementById("historyBody");
+    if(!body || !window.supabaseClient) return;
+
+    body.innerHTML='<tr><td colspan="5" class="muted">Chargement de l’historique…</td></tr>';
+
+    try{
+      const {data,error}=await window.supabaseClient
+        .from("comptabilite_jours")
+        .select("jour, donnees")
+        .order("jour",{ascending:true});
+
+      if(error) throw error;
+
+      const weeks={};
+      (data||[]).forEach(row=>{
+        const start=weekStartISO(row.jour);
+        if(!weeks[start]) weeks[start]={sold:0,gross:0,commission:0,net:0};
+        const t=typeof dayDataTotals==="function"
+          ? dayDataTotals(row.donnees||{})
+          : {sold:0,gross:0,commission:0,net:0};
+        weeks[start].sold+=t.sold;
+        weeks[start].gross+=t.gross;
+        weeks[start].commission+=t.commission;
+        weeks[start].net+=t.net;
+      });
+
+      const entries=Object.entries(weeks).sort((a,b)=>b[0].localeCompare(a[0]));
+
+      if(!entries.length){
+        body.innerHTML='<tr><td colspan="5" class="muted">Aucune semaine enregistrée pour le moment.</td></tr>';
+        return;
+      }
+
+      body.innerHTML=entries.map(([start,t])=>`
+        <tr>
+          <td><strong>${weekLabel(start)}</strong></td>
+          <td>${t.sold}</td>
+          <td>${fmtRD(t.gross)}</td>
+          <td>${fmtRD(t.commission)}</td>
+          <td><strong>${fmtRD(t.net)}</strong></td>
+        </tr>`).join("");
+    }catch(e){
+      console.error("Historique semaines:",e);
+      body.innerHTML='<tr><td colspan="5">⚠️ Impossible de charger l’historique. Vérifie la connexion.</td></tr>';
+    }
+  }
+
+  window.loadWeekHistory=loadWeekHistory;
+
+  function initHistory(){
+    loadWeekHistory();
+    const btn=document.getElementById("refreshDashboardBtn");
+    if(btn) btn.addEventListener("click",loadWeekHistory);
+  }
+
+  if(document.readyState==="loading") document.addEventListener("DOMContentLoaded",initHistory);
+  else initHistory();
+})();
+</script>
+
 </body>
 </html>
