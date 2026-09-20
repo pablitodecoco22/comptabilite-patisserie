@@ -149,6 +149,31 @@
     .week-total td { font-weight:800; background:#fff7e8; }
     .week-range { margin-top:-8px; color:#666; font-size:14px; }
   </style>
+
+<style>
+.dashboard-card{margin-top:18px}
+.section-title-row{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.muted{opacity:.68;font-size:.92rem}
+.stats-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:16px 0}
+.stat-box{padding:16px;border-radius:16px;background:linear-gradient(135deg,#fffaf2,#fff);border:1px solid #eadfce}
+.stat-label{font-size:.9rem;opacity:.72;margin-bottom:7px}.stat-box>div:last-child{font-size:1.45rem;font-weight:800}
+.dashboard-grid{display:grid;grid-template-columns:1.4fr 1fr;gap:18px;margin-top:16px}
+.dashboard-grid h3,.goal-box h3{margin:0 0 12px}
+.week-bars{display:flex;align-items:flex-end;gap:9px;height:190px;padding:10px 4px;border-bottom:1px solid #ddd}
+.day-bar{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;gap:5px}
+.day-bar .bar{width:100%;max-width:48px;border-radius:9px 9px 2px 2px;background:#c9892b;min-height:3px}
+.day-bar .day{font-size:.76rem}.day-bar .amount{font-size:.7rem;opacity:.7}
+.top-products{display:flex;flex-direction:column;gap:8px}
+.top-product{display:grid;grid-template-columns:30px 1fr auto;gap:8px;align-items:center;padding:10px 12px;border-radius:12px;background:#fffaf2}
+.goal-box{margin-top:18px;padding:16px;border-radius:16px;background:#fffaf2;border:1px solid #eadfce}
+.goal-box label{display:flex;align-items:center;gap:5px}.goal-box input{width:105px;padding:7px;border:1px solid #ddd;border-radius:8px}
+.progress-track{height:15px;background:#eee;border-radius:999px;overflow:hidden}.progress-fill{height:100%;width:0%;background:#c9892b;border-radius:999px;transition:width .3s}
+.goal-text{margin-top:8px;font-weight:700}
+.history-table{width:100%;border-collapse:collapse}.history-table th,.history-table td{padding:10px;border-bottom:1px solid #eee;text-align:left}
+.secondary-btn{padding:8px 12px;border:1px solid #ddd;border-radius:9px;background:#fff;cursor:pointer}
+@media(max-width:800px){.stats-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.dashboard-grid{grid-template-columns:1fr}.week-bars{height:160px}}
+</style>
+
 </head>
 
 <body>
@@ -160,7 +185,62 @@
 
 <div class="container">
 
-  <div class="card">
+  
+    <section id="dashboardSection" class="card dashboard-card">
+      <div class="section-title-row">
+        <div>
+          <h2>📊 Tableau de bord</h2>
+          <div id="dashboardWeekLabel" class="muted">Semaine Lindo — vendredi → jeudi</div>
+        </div>
+        <button id="refreshDashboardBtn" class="secondary-btn" type="button">↻ Actualiser</button>
+      </div>
+
+      <div class="stats-grid">
+        <div class="stat-box"><div class="stat-label">💰 CA brut semaine</div><div id="dashGross">0 RD$</div></div>
+        <div class="stat-box"><div class="stat-label">💳 Commission Lindo</div><div id="dashCommission">0 RD$</div></div>
+        <div class="stat-box"><div class="stat-label">💵 Net après Lindo</div><div id="dashNet">0 RD$</div></div>
+        <div class="stat-box"><div class="stat-label">🧁 Gâteaux vendus</div><div id="dashSold">0</div></div>
+      </div>
+
+      <div class="dashboard-grid">
+        <div>
+          <h3>📈 Ventes par jour</h3>
+          <div id="weekBars" class="week-bars"></div>
+        </div>
+        <div>
+          <h3>🏆 Top ventes</h3>
+          <div id="topProducts" class="top-products">
+            <div class="muted">Les ventes apparaîtront ici.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="goal-box">
+        <div class="section-title-row">
+          <h3>🎯 Objectif de semaine</h3>
+          <label>Objectif CA <input id="weeklyGoal" type="number" min="0" step="100" value="35000"> RD$</label>
+        </div>
+        <div class="progress-track"><div id="goalProgress" class="progress-fill"></div></div>
+        <div id="goalText" class="goal-text">0 / 35 000 RD$ — 0 %</div>
+      </div>
+    </section>
+
+    <section id="historySection" class="card dashboard-card">
+      <div class="section-title-row">
+        <div>
+          <h2>📚 Historique des semaines</h2>
+          <div class="muted">Les semaines Lindo précédentes sont calculées à partir des journées enregistrées.</div>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="history-table">
+          <thead><tr><th>Semaine</th><th>Vendus</th><th>CA brut</th><th>Commission</th><th>Net</th></tr></thead>
+          <tbody id="historyBody"><tr><td colspan="5" class="muted">Chargement…</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+<div class="card">
     <h2>📅 Journée</h2>
     <div class="toolbar">
       <div class="date-input">
@@ -799,5 +879,99 @@ currentDate = dateInput.value;
   activerTempsReel();
 })();
 </script>
+
+<script>
+(function(){
+  const PRICES = [60,250,260,280,300,310];
+  const DAYS = ['Vendredi','Samedi','Dimanche','Lundi','Mardi','Mercredi','Jeudi'];
+  const COMMISSION = 0.15;
+
+  function fmt(n){ return new Intl.NumberFormat('fr-FR').format(Math.round(n||0)) + ' RD$'; }
+  function iso(d){ return d.toISOString().slice(0,10); }
+  function weekStart(dateStr){
+    const d = new Date(dateStr+'T12:00:00');
+    const dow = d.getDay(); // Sun=0
+    const diff = (dow - 5 + 7) % 7;
+    d.setDate(d.getDate()-diff);
+    return d;
+  }
+  function dateRange(start){
+    const a=[]; for(let i=0;i<7;i++){const d=new Date(start);d.setDate(d.getDate()+i);a.push(iso(d));} return a;
+  }
+  function getLocal(date){
+    try{
+      const raw=localStorage.getItem('comptabilite_'+date);
+      if(raw) return JSON.parse(raw);
+      const raw2=localStorage.getItem('comptabilite_jour_'+date);
+      if(raw2) return JSON.parse(raw2);
+    }catch(e){}
+    return null;
+  }
+  function soldAndGross(data){
+    let sold=0,gross=0;
+    if(!data) return {sold,gross,byPrice:{}};
+    const rows = data.rows || data.produits || data.data || data;
+    const arr = Array.isArray(rows) ? rows : Object.values(rows||{});
+    const byPrice={};
+    for(const p of PRICES) byPrice[p]=0;
+    for(const r of arr){
+      const price=Number(r.prix ?? r.price ?? r.p ?? 0);
+      const q=Number(r.vendus ?? r.sold ?? r.quantiteVendue ?? r.q ?? 0);
+      if(Number.isFinite(q) && q>0){
+        sold+=q; gross+=q*price;
+        if(byPrice[price]!=null) byPrice[price]+=q;
+      }
+    }
+    return {sold,gross,byPrice};
+  }
+  async function fetchDay(date){
+    const local=getLocal(date);
+    try{
+      if(window.supabaseClient && window.supabaseClient.from){
+        const {data,error}=await window.supabaseClient.from('comptabilite_jours').select('donnees').eq('jour',date).maybeSingle();
+        if(!error && data && data.donnees) return data.donnees;
+      }
+    }catch(e){}
+    return local;
+  }
+  async function refresh(){
+    const selected = (document.querySelector('#date')||document.querySelector('input[type=date]'))?.value || iso(new Date());
+    const start=weekStart(selected), dates=dateRange(start);
+    const records=await Promise.all(dates.map(fetchDay));
+    let gross=0,sold=0; const daily=[];
+    const productTotals={}; PRICES.forEach(p=>productTotals[p]=0);
+    records.forEach((rec,i)=>{
+      const x=soldAndGross(rec); gross+=x.gross;sold+=x.sold;daily.push(x.gross);
+      Object.keys(x.byPrice).forEach(p=>productTotals[p]+=x.byPrice[p]);
+    });
+    const commission=gross*COMMISSION, net=gross-commission;
+    const el=id=>document.getElementById(id);
+    if(el('dashGross'))el('dashGross').textContent=fmt(gross);
+    if(el('dashCommission'))el('dashCommission').textContent=fmt(commission);
+    if(el('dashNet'))el('dashNet').textContent=fmt(net);
+    if(el('dashSold'))el('dashSold').textContent=new Intl.NumberFormat('fr-FR').format(sold);
+    if(el('dashboardWeekLabel')){
+      const end=new Date(start);end.setDate(end.getDate()+6);
+      el('dashboardWeekLabel').textContent='Semaine Lindo — '+start.toLocaleDateString('fr-FR')+' → '+end.toLocaleDateString('fr-FR');
+    }
+    const max=Math.max(...daily,1);
+    if(el('weekBars'))el('weekBars').innerHTML=daily.map((v,i)=>'<div class="day-bar"><div class="amount">'+Math.round(v).toLocaleString('fr-FR')+' RD$</div><div class="bar" style="height:'+Math.max(3,Math.round(v/max*130))+'px"></div><div class="day">'+DAYS[i].slice(0,3)+'</div></div>').join('');
+    const tops=Object.entries(productTotals).sort((a,b)=>b[1]-a[1]).filter(x=>x[1]>0).slice(0,5);
+    if(el('topProducts'))el('topProducts').innerHTML=tops.length?tops.map((x,i)=>'<div class="top-product"><b>'+(i+1)+'.</b><span>Produit '+x[0]+' RD$</span><strong>'+x[1]+'</strong></div>').join(''):'<div class="muted">Les ventes apparaîtront ici.</div>';
+    const goal=Number(el('weeklyGoal')?.value||35000), pct=goal>0?Math.min(100,gross/goal*100):0;
+    if(el('goalProgress'))el('goalProgress').style.width=pct.toFixed(1)+'%';
+    if(el('goalText'))el('goalText').textContent=fmt(gross)+' / '+fmt(goal)+' — '+Math.round(pct)+' %';
+  }
+  function init(){
+    const btn=document.getElementById('refreshDashboardBtn'); if(btn)btn.addEventListener('click',refresh);
+    const goal=document.getElementById('weeklyGoal'); if(goal)goal.addEventListener('input',refresh);
+    document.addEventListener('change',e=>{if(e.target.matches('input[type=date]')) setTimeout(refresh,150);});
+    setTimeout(refresh,500);
+    setInterval(refresh,15000);
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
+})();
+</script>
+
 </body>
 </html>
