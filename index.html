@@ -395,15 +395,16 @@ async function upsertDay(date,data){
   const controller=new AbortController();
   const timer=setTimeout(()=>controller.abort(),8000);
   try{
-    const response=await fetch(`${SUPABASE_URL}/rest/v1/comptabilite_jours`,{
+    const response=await fetch(`${SUPABASE_URL}/rest/v1/comptabilite_jours?on_conflict=jour`,{
       method:"POST",
       headers:{
         "apikey":SUPABASE_ANON_KEY,
         "Authorization":`Bearer ${SUPABASE_ANON_KEY}`,
         "Content-Type":"application/json",
+        "Accept":"application/json",
         "Prefer":"resolution=merge-duplicates,return=minimal"
       },
-      body:JSON.stringify({jour:date,donnees:data,updated_at:new Date().toISOString()}),
+      body:JSON.stringify([{jour:date,donnees:data,updated_at:new Date().toISOString()}]),
       signal:controller.signal
     });
     if(!response.ok){
@@ -433,6 +434,11 @@ async function syncPendingDays(){
     }catch(e){
       allOk=false;
       console.error("Synchronisation de "+item.date+":",e);
+      if(item.date===currentDate){
+        $("message").textContent="⚠️ Synchronisation impossible : "+(e?.message||"erreur Supabase")+". Données conservées sur cet appareil.";
+        $("message").style.color="#a52b2b";
+        setStatus("⚠️ Erreur cloud — données conservées","error");
+      }
     }
   }
   return allOk;
@@ -447,7 +453,7 @@ function scheduleSyncRetry(){
       setStatus("✓ Synchronisé","ok");
       if(currentDate) await loadDay();
     }else{
-      setStatus("📱 Données conservées — nouvelle tentative…","wait");
+      setStatus("⚠️ Synchronisation cloud en échec — données conservées","error");
       scheduleSyncRetry();
     }
   },5000);
@@ -486,7 +492,7 @@ async function loadDay(){
         // Ne pas laisser un faux « attente » permanent à l'écran.
         if(myToken===loadToken && $("date").value===date){
           $("message").textContent="📱 Données conservées sur le téléphone — nouvelle tentative automatique.";
-          setStatus("📱 Nouvelle tentative de synchronisation…", "wait");
+          setStatus("⚠️ Cloud inaccessible — données conservées", "error");
           scheduleSyncRetry();
         }
       }
@@ -993,7 +999,7 @@ function scheduleSave(){
       setStatus("✓ Sauvegarde automatique","ok");
     }catch(error){
       console.error("Auto-save:",error);
-      setStatus("📱 Données conservées — nouvelle tentative…","wait");
+      setStatus("⚠️ Synchronisation cloud en échec — données conservées","error");
       scheduleSyncRetry();
     }
   },700);
@@ -1337,16 +1343,23 @@ window.addEventListener("offline",()=>{
   currentDate=$("date").value;
 
   try{
-    const {error}=await supabaseClient
-      .from("comptabilite_jours")
-      .select("jour")
-      .limit(1);
-
-    if(error)throw error;
+    if(!navigator.onLine) throw new Error("HORS_LIGNE");
+    const controller=new AbortController();
+    const timer=setTimeout(()=>controller.abort(),8000);
+    const response=await fetch(`${SUPABASE_URL}/rest/v1/comptabilite_jours?select=jour&limit=1`,{
+      method:"GET",
+      headers:{"apikey":SUPABASE_ANON_KEY,"Authorization":`Bearer ${SUPABASE_ANON_KEY}`},
+      signal:controller.signal
+    });
+    clearTimeout(timer);
+    if(!response.ok){
+      const detail=await response.text().catch(()=>"");
+      throw new Error(`SUPABASE_${response.status}${detail?" — "+detail.slice(0,180):""}`);
+    }
     setStatus("✓ Connecté à Supabase","ok");
   }catch(e){
     console.error("Connexion Supabase:",e);
-    setStatus(navigator.onLine?"⚠️ Vérification Supabase":"📱 Hors ligne","wait");
+    setStatus(navigator.onLine?"⚠️ Supabase inaccessible":"📱 Hors ligne","error");
   }
 
   await syncPendingDays();
