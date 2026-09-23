@@ -199,6 +199,7 @@ let formDate = "";
 let formDirty = false;
 let existingTouched = false;
 let saveSequence = 0;
+let syncRetryTimer = null;
 
 /* ==========================================================
    OUTILS
@@ -373,13 +374,17 @@ function calculate(show=true){
 async function remoteDay(date){
   if(!navigator.onLine)return null;
   try{
-    const {data,error}=await supabaseClient
-      .from("comptabilite_jours")
-      .select("jour,donnees,updated_at")
-      .eq("jour",date)
-      .maybeSingle();
-    if(error)throw error;
-    return data||null;
+    const controller=new AbortController();
+    const timer=setTimeout(()=>controller.abort(),8000);
+    const response=await fetch(`${SUPABASE_URL}/rest/v1/comptabilite_jours?select=jour,donnees,updated_at&jour=eq.${encodeURIComponent(date)}`,{
+      method:"GET",
+      headers:{"apikey":SUPABASE_ANON_KEY,"Authorization":`Bearer ${SUPABASE_ANON_KEY}`},
+      signal:controller.signal
+    });
+    clearTimeout(timer);
+    if(!response.ok)throw new Error(`SUPABASE_${response.status}`);
+    const rows=await response.json();
+    return rows[0]||null;
   }catch(e){
     console.error("Lecture Supabase:",e);
     return null;
@@ -387,23 +392,65 @@ async function remoteDay(date){
 }
 
 async function upsertDay(date,data){
-  // Ne jamais laisser l'application rester bloquée indéfiniment sur
-  // « Attente de synchronisation ». La sauvegarde locale reste la source
-  // de sécurité si Supabase ne répond pas assez vite.
-  const request=supabaseClient
-    .from("comptabilite_jours")
-    .upsert({
-      jour:date,
-      donnees:data,
-      updated_at:new Date().toISOString()
-    },{onConflict:"jour"});
+  const controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(),8000);
+  try{
+    const response=await fetch(`${SUPABASE_URL}/rest/v1/comptabilite_jours`,{
+      method:"POST",
+      headers:{
+        "apikey":SUPABASE_ANON_KEY,
+        "Authorization":`Bearer ${SUPABASE_ANON_KEY}`,
+        "Content-Type":"application/json",
+        "Prefer":"resolution=merge-duplicates,return=minimal"
+      },
+      body:JSON.stringify({jour:date,donnees:data,updated_at:new Date().toISOString()}),
+      signal:controller.signal
+    });
+    if(!response.ok){
+      const detail=await response.text().catch(()=>"");
+      throw new Error(`SUPABASE_${response.status}${detail?" — "+detail.slice(0,180):""}`);
+    }
+  }finally{
+    clearTimeout(timer);
+  }
+}
 
-  const timeout=new Promise((_,reject)=>
-    setTimeout(()=>reject(new Error("TIMEOUT_SUPABASE")),8000)
-  );
+async function syncPendingDays(){
+  if(!navigator.onLine)return false;
+  let allOk=true;
+  const pending=[];
+  for(let i=0;i<localStorage.length;i++){
+    const key=localStorage.key(i);
+    if(!key || !key.startsWith(LOCAL_PREFIX))continue;
+    const date=key.slice(LOCAL_PREFIX.length);
+    const local=getLocal(date);
+    if(local?.data && local.pending)pending.push({date,data:local.data});
+  }
+  for(const item of pending){
+    try{
+      await upsertDay(item.date,item.data);
+      markLocalSynced(item.date);
+    }catch(e){
+      allOk=false;
+      console.error("Synchronisation de "+item.date+":",e);
+    }
+  }
+  return allOk;
+}
 
-  const result=await Promise.race([request,timeout]);
-  if(result?.error)throw result.error;
+function scheduleSyncRetry(){
+  clearTimeout(syncRetryTimer);
+  syncRetryTimer=setTimeout(async()=>{
+    if(!navigator.onLine)return scheduleSyncRetry();
+    const ok=await syncPendingDays();
+    if(ok){
+      setStatus("✓ Synchronisé","ok");
+      if(currentDate) await loadDay();
+    }else{
+      setStatus("📱 Données conservées — nouvelle tentative…","wait");
+      scheduleSyncRetry();
+    }
+  },5000);
 }
 
 /* ==========================================================
@@ -438,8 +485,9 @@ async function loadDay(){
         // Les données sont déjà conservées sur le téléphone.
         // Ne pas laisser un faux « attente » permanent à l'écran.
         if(myToken===loadToken && $("date").value===date){
-          $("message").textContent="📱 Enregistré sur le téléphone — synchronisation cloud à réessayer.";
-          setStatus("📱 Enregistré localement", "wait");
+          $("message").textContent="📱 Données conservées sur le téléphone — nouvelle tentative automatique.";
+          setStatus("📱 Nouvelle tentative de synchronisation…", "wait");
+          scheduleSyncRetry();
         }
       }
     }
@@ -928,7 +976,10 @@ function scheduleSave(){
   setStatus("💾 Enregistrement local…","wait");
 
   saveTimer=setTimeout(async()=>{
-    if(!navigator.onLine)return;
+    if(!navigator.onLine){
+      scheduleSyncRetry();
+      return;
+    }
 
     try{
       /*
@@ -942,7 +993,8 @@ function scheduleSave(){
       setStatus("✓ Sauvegarde automatique","ok");
     }catch(error){
       console.error("Auto-save:",error);
-      setStatus("📱 Enregistré localement — cloud indisponible","wait");
+      setStatus("📱 Données conservées — nouvelle tentative…","wait");
+      scheduleSyncRetry();
     }
   },700);
 }
@@ -1182,16 +1234,8 @@ async function loadWeekHistory(){
    ========================================================== */
 async function syncCurrentLocal(){
   if(!navigator.onLine)return;
-
-  const local=getLocal(currentDate);
-  if(local && local.data && local.pending){
-    try{
-      await upsertDay(currentDate,local.data);
-      markLocalSynced(currentDate);
-      await calculatePreviousDay(currentDate,local.data);
-    }catch(e){console.error("Sync:",e)}
-  }
-
+  const ok=await syncPendingDays();
+  if(!ok)scheduleSyncRetry();
   await loadDay();
 }
 
@@ -1305,7 +1349,9 @@ window.addEventListener("offline",()=>{
     setStatus(navigator.onLine?"⚠️ Vérification Supabase":"📱 Hors ligne","wait");
   }
 
+  await syncPendingDays();
   await loadDay();
+  scheduleSyncRetry();
 })();
 </script>
 </body>
