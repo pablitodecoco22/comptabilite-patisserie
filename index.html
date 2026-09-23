@@ -1,0 +1,1289 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#222222">
+  <title>Comptabilité Pâtisserie</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #f7f4ef;
+      color: #333;
+    }
+    header {
+      background: #fff;
+      padding: 18px 20px;
+      text-align: center;
+      border-bottom: 1px solid #ddd;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    header h1 { margin: 0; font-size: 25px; }
+    header p { margin: 6px 0 0; color: #777; }
+    .sync-status {
+      display: inline-block;
+      margin-top: 10px;
+      padding: 5px 10px;
+      border-radius: 20px;
+      font-size: 12px;
+      background: #eee;
+    }
+    .sync-ok { background: #eaf7ed; color: #23733b; }
+    .sync-wait { background: #fff4df; color: #8a5a00; }
+    .sync-error { background: #fdeaea; color: #a52b2b; }
+
+    .container {
+      max-width: 900px;
+      margin: auto;
+      padding: 20px;
+    }
+    .card {
+      background: white;
+      border-radius: 14px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+    }
+    h2 { margin-top: 0; }
+    .toolbar {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .date-input {
+      flex: 1;
+      min-width: 180px;
+    }
+    .date-input input {
+      margin-top: 5px;
+    }
+    .price-row {
+      display: grid;
+      grid-template-columns: 80px 1fr 1fr 1fr 1fr 1fr 1fr;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .price { font-weight: bold; font-size: 18px; }
+    input {
+      width: 100%;
+      padding: 11px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      font-size: 16px;
+    }
+    label {
+      font-size: 13px;
+      color: #777;
+      display: block;
+      margin-bottom: 4px;
+    }
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+    .summary-box {
+      background: #f5f5f5;
+      border-radius: 10px;
+      padding: 15px;
+      text-align: center;
+    }
+    .summary-box strong {
+      display: block;
+      font-size: 23px;
+      margin-top: 5px;
+    }
+    .green { background: #eaf7ed; }
+    .orange { background: #fff4df; }
+    .blue { background: #eaf2ff; }
+    .red { background: #fdeaea; }
+    button {
+      border: 0;
+      border-radius: 9px;
+      padding: 13px 20px;
+      font-size: 16px;
+      cursor: pointer;
+      background: #222;
+      color: white;
+    }
+    button:hover { opacity: 0.9; }
+    .secondary { background: #666; }
+    .save {
+      width: 100%;
+      margin-top: 15px;
+      background: #222;
+    }
+    .message {
+      margin-top: 15px;
+      font-size: 14px;
+    }
+    .small {
+      font-size: 12px;
+      color: #777;
+      line-height: 1.45;
+    }
+    @media (max-width: 650px) {
+      .price-row {
+        grid-template-columns: 70px repeat(5, 125px);
+        gap: 6px;
+      }
+      .price { font-size: 15px; }
+      input { padding: 9px 6px; font-size: 14px; }
+      .summary { grid-template-columns: 1fr; }
+      .container { padding: 12px; }
+      .card { padding: 15px; }
+    }
+
+    .week-table-wrap { overflow-x:auto; }
+    .week-table { width:100%; border-collapse:collapse; min-width:620px; }
+    .week-table th, .week-table td { padding:10px 8px; border-bottom:1px solid #eee; text-align:right; }
+    .week-table th:first-child, .week-table td:first-child { text-align:left; }
+    .week-table th { background:#faf7f2; font-weight:700; }
+    .week-total td { font-weight:800; background:#fff7e8; }
+    .week-range { margin-top:-8px; color:#666; font-size:14px; }
+  </style>
+
+<style>
+.dashboard-card{margin-top:18px}
+.section-title-row{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.muted{opacity:.68;font-size:.92rem}
+.stats-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:16px 0}
+.stat-box{padding:16px;border-radius:16px;background:linear-gradient(135deg,#fffaf2,#fff);border:1px solid #eadfce}
+.stat-label{font-size:.9rem;opacity:.72;margin-bottom:7px}.stat-box>div:last-child{font-size:1.45rem;font-weight:800}
+.dashboard-grid{display:grid;grid-template-columns:1.4fr 1fr;gap:18px;margin-top:16px}
+.dashboard-grid h3,.goal-box h3{margin:0 0 12px}
+.week-bars{display:flex;align-items:flex-end;gap:9px;height:190px;padding:10px 4px;border-bottom:1px solid #ddd}
+.day-bar{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;gap:5px}
+.day-bar .bar{width:100%;max-width:48px;border-radius:9px 9px 2px 2px;background:#c9892b;min-height:3px}
+.day-bar .day{font-size:.76rem}.day-bar .amount{font-size:.7rem;opacity:.7}
+.top-products{display:flex;flex-direction:column;gap:8px}
+.top-product{display:grid;grid-template-columns:30px 1fr auto;gap:8px;align-items:center;padding:10px 12px;border-radius:12px;background:#fffaf2}
+.goal-box{margin-top:18px;padding:16px;border-radius:16px;background:#fffaf2;border:1px solid #eadfce}
+.goal-box label{display:flex;align-items:center;gap:5px}.goal-box input{width:105px;padding:7px;border:1px solid #ddd;border-radius:8px}
+.progress-track{height:15px;background:#eee;border-radius:999px;overflow:hidden}.progress-fill{height:100%;width:0%;background:#c9892b;border-radius:999px;transition:width .3s}
+.goal-text{margin-top:8px;font-weight:700}
+.history-table{width:100%;border-collapse:collapse}.history-table th,.history-table td{padding:10px;border-bottom:1px solid #eee;text-align:left}
+.secondary-btn{padding:8px 12px;border:1px solid #ddd;border-radius:9px;background:#fff;cursor:pointer}
+@media(max-width:800px){.stats-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.dashboard-grid{grid-template-columns:1fr}.week-bars{height:160px}}
+</style>
+
+
+<style>
+  /* Tableau de stock : toujours aligné et défilable sur téléphone */
+  .stock-table-wrap {
+    width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+  }
+  .stock-table {
+    width: 100%;
+    min-width: 0;
+    overflow: visible;
+  }
+  .stock-table .price-row {
+    width: 100%;
+    min-width: 0;
+    grid-template-columns: 80px repeat(5, minmax(0, 1fr));
+  }
+  .stock-header {
+    margin-bottom: 12px;
+  }
+  .stock-header label {
+    text-align: center;
+    line-height: 1.15;
+  }
+  .stock-table #prices {
+    overflow: visible;
+  }
+  .stock-table #prices .price-row {
+    min-width: 0;
+  }
+  .table-scroll-hint {
+    display: none;
+    margin-top: 9px;
+    font-size: 12px;
+    color: #777;
+    text-align: center;
+  }
+  @media (max-width: 700px) {
+    .stock-card {
+      padding: 12px 10px 14px;
+    }
+    .stock-table {
+      width: max-content;
+      min-width: 700px;
+    }
+    .stock-table .price-row,
+    .stock-table #prices .price-row {
+      min-width: 700px;
+      grid-template-columns: 70px repeat(5, 105px);
+      gap: 6px;
+    }
+    .stock-table .price {
+      font-size: 14px;
+      white-space: nowrap;
+    }
+    .stock-table input {
+      min-width: 0;
+      padding: 9px 7px;
+      font-size: 14px;
+    }
+    .stock-header label {
+      font-size: 11px;
+    }
+    .table-scroll-hint {
+      display: block;
+    }
+  }
+</style>
+</head>
+
+<body>
+<header>
+  <h1>🍰 Comptabilité Pâtisserie</h1>
+  <p>Gestion simple par prix — synchronisation téléphone ↔ ordinateur</p>
+  <span id="syncStatus" class="sync-status sync-wait">Connexion…</span>
+</header>
+
+<div class="container">
+
+  
+    <section id="dashboardSection" class="card dashboard-card">
+      <div class="section-title-row">
+        <div>
+          <h2>📊 Tableau de bord</h2>
+          <div id="dashboardWeekLabel" class="muted">Semaine Lindo — vendredi → jeudi · mise à jour automatique</div>
+        </div>
+        
+      </div>
+
+      <div class="stats-grid">
+        <div class="stat-box"><div class="stat-label">💰 CA brut semaine</div><div id="dashGross">0 RD$</div></div>
+        <div class="stat-box"><div class="stat-label">💳 Commission Lindo</div><div id="dashCommission">0 RD$</div></div>
+        <div class="stat-box"><div class="stat-label">💵 Net après Lindo</div><div id="dashNet">0 RD$</div></div>
+        <div class="stat-box"><div class="stat-label">🧁 Gâteaux vendus</div><div id="dashSold">0</div></div>
+      </div>
+
+      <div class="dashboard-grid">
+        <div>
+          <h3>📈 Ventes par jour</h3>
+          <div id="weekBars" class="week-bars"></div>
+        </div>
+        <div>
+          <h3>🏆 Top ventes</h3>
+          <div id="topProducts" class="top-products">
+            <div class="muted">Les ventes apparaîtront ici.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="goal-box">
+        <div class="section-title-row">
+          <h3>🎯 Objectif de semaine</h3>
+          <label>Objectif CA <input id="weeklyGoal" type="number" min="0" step="100" value="35000"> RD$</label>
+        </div>
+        <div class="progress-track"><div id="goalProgress" class="progress-fill"></div></div>
+        <div id="goalText" class="goal-text">0 / 35 000 RD$ — 0 %</div>
+      </div>
+    </section>
+
+    <section id="historySection" class="card dashboard-card">
+      <div class="section-title-row">
+        <div>
+          <h2>📚 Historique des semaines</h2>
+          <div class="muted">Les semaines Lindo précédentes sont calculées à partir des journées enregistrées.</div>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="history-table">
+          <thead><tr><th>Semaine</th><th>Vendus</th><th>CA brut</th><th>Commission</th><th>Net</th></tr></thead>
+          <tbody id="historyBody"><tr><td colspan="5" class="muted">Chargement…</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+<div class="card">
+    <h2>📅 Journée</h2>
+    <div class="toolbar">
+      <div class="date-input">
+        <label for="date">Date</label>
+        <input type="date" id="date">
+      </div>
+      <button class="secondary" onclick="chargerJour()">Charger</button>
+    </div>
+    <p class="small">
+      Les chiffres sont enregistrés automatiquement. <strong>Les ventes sont calculées automatiquement le lendemain</strong> grâce au nombre de gâteaux restant le matin. Tu peux aussi saisir « Vendus » manuellement si nécessaire.
+      Si le téléphone n'a pas Internet, ils restent enregistrés sur le téléphone et sont envoyés à Supabase dès que la connexion revient.
+    </p>
+  </div>
+
+  <div class="card stock-card">
+    <div class="stock-table-wrap">
+      <div class="stock-table">
+        <div class="price-row stock-header">
+          <div></div>
+          <div><label>Reste veille</label></div>
+          <div><label>Apportés</label></div>
+          <div><label>Total</label></div>
+          <div><label>Retirés / perdus</label></div>
+          <div><label>Vendus</label></div>
+        </div>
+        <div id="prices"></div>
+      </div>
+    </div>
+
+    <div class="table-scroll-hint">↔️ Fais glisser le tableau vers la gauche ou la droite pour voir toutes les colonnes.</div>
+
+    <button class="save" onclick="calculerEtSauver()">💾 Enregistrer / calculer</button>
+    <p class="small">💡 Normalement, « Vendus » se calcule automatiquement le lendemain. Mais tu peux aussi le saisir manuellement, notamment pour les anciennes journées ou les jours déjà passés.</p>
+    <p id="message" class="message"></p>
+  </div>
+
+  <div class="card">
+    <h2>📊 Résultat du jour</h2>
+    <div class="summary">
+      <div class="summary-box blue">
+        Déjà là
+        <strong id="totalExisting">0</strong>
+      </div>
+      <div class="summary-box green">
+        Total disponible
+        <strong id="totalAvailable">0</strong>
+      </div>
+      <div class="summary-box orange">
+        Articles vendus
+        <strong id="totalSold">0</strong>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>💰 Chiffre d'affaires</h2>
+    <div class="summary">
+      <div class="summary-box">
+        Ventes brutes
+        <strong id="gross">0 RD$</strong>
+      </div>
+      <div class="summary-box orange">
+        Commission Lindo 15 %
+        <strong id="commission">0 RD$</strong>
+      </div>
+      <div class="summary-box green">
+        Net après Lindo
+        <strong id="net">0 RD$</strong>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>📅 Semaine Lindo</h2>
+    <p id="weekRange" class="week-range">Du vendredi au jeudi</p>
+    <div class="summary">
+      <div class="summary-box">
+        CA brut semaine
+        <strong id="weekGross">0 RD$</strong>
+      </div>
+      <div class="summary-box orange">
+        Commission Lindo 15 %
+        <strong id="weekCommission">0 RD$</strong>
+      </div>
+      <div class="summary-box green">
+        Net semaine
+        <strong id="weekNet">0 RD$</strong>
+      </div>
+      <div class="summary-box blue">
+        Gâteaux vendus
+        <strong id="weekSold">0</strong>
+      </div>
+    </div>
+    <div class="week-table-wrap" style="margin-top:16px;">
+      <table class="week-table">
+        <thead>
+          <tr><th>Jour</th><th>Vendus</th><th>CA brut</th><th>Commission</th><th>Net</th></tr>
+        </thead>
+        <tbody id="weekRows"></tbody>
+        <tfoot id="weekFooter"></tfoot>
+      </table>
+    </div>
+    <p id="weekMessage" class="small" style="margin-top:10px;"></p>
+  </div>
+
+  <div class="card">
+    <h2>📋 Lecture rapide</h2>
+    <p class="small">
+      <strong>Les ventes d'hier = stock disponible hier − retirés/perdus hier − reste constaté ce matin.</strong>
+      Tu ne renseignes donc jamais une colonne « reste fin de journée » le soir : le nombre que tu comptes le matin dans « Reste veille » sert automatiquement à calculer les ventes de la veille.
+    </p>
+  </div>
+
+</div>
+
+<script>
+/*
+  ============================================================
+  CONFIGURATION SUPABASE
+  ============================================================
+  Cette clé est une clé "publishable/anon". Elle peut être
+  présente dans une application web. La sécurité des données
+  dépend des politiques RLS configurées dans Supabase.
+*/
+const SUPABASE_URL = "https://rutowrlwqhgzfsftrtxz.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ1dG93cmx3cWhnemZzZnRydHh6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk4MzczMjcsImV4cCI6MjEwNTQxMzMyN30.pVO5PlIdkwz0EzlysvmVBdsxkGrPN7kkwBXnpM4V7Es";
+
+const supabaseClient = window.supabase.createClient(
+  SUPABASE_URL,
+  SUPABASE_ANON_KEY
+);
+
+const prices = [60, 250, 260, 280, 300, 310];
+const LOCAL_PREFIX = "comptabilite_patisserie_";
+let saveTimer = null;
+let realtimeChannel = null;
+let currentDate = "";
+
+const dateInput = document.getElementById("date");
+const pricesContainer = document.getElementById("prices");
+const syncStatus = document.getElementById("syncStatus");
+const message = document.getElementById("message");
+
+function dateLocale(dateString) {
+  const d = new Date(dateString + "T12:00:00");
+  return d.toLocaleDateString("fr-FR", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric"
+  });
+}
+
+function setStatus(text, type = "wait") {
+  syncStatus.textContent = text;
+  syncStatus.className = "sync-status " +
+    (type === "ok" ? "sync-ok" :
+     type === "error" ? "sync-error" : "sync-wait");
+}
+
+function localKey(date) {
+  return LOCAL_PREFIX + date;
+}
+
+function getEmptyData() {
+  const data = {};
+  prices.forEach(price => {
+    data[price] = { existing: 0, brought: 0, removed: 0, sold: 0, manualSold: false };
+  });
+  return data;
+}
+
+function getFormData() {
+  const data = getEmptyData();
+
+  prices.forEach(price => {
+    data[price] = {
+      existing: Number(document.getElementById(`existing-${price}`).value) || 0,
+      brought: Number(document.getElementById(`brought-${price}`).value) || 0,
+      removed: Number(document.getElementById(`removed-${price}`).value) || 0,
+      sold: Number(document.getElementById(`sold-${price}`).value) || 0,
+      manualSold: document.getElementById(`sold-${price}`).dataset.manual === "true"
+    };
+  });
+
+  return data;
+}
+
+function putLocal(date, data) {
+  localStorage.setItem(localKey(date), JSON.stringify({
+    date,
+    data,
+    savedAt: new Date().toISOString(),
+    pending: true
+  }));
+}
+
+function getLocal(date) {
+  try {
+    const raw = localStorage.getItem(localKey(date));
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function clearPendingLocal(date) {
+  const local = getLocal(date);
+  if (local) {
+    local.pending = false;
+    local.syncedAt = new Date().toISOString();
+    localStorage.setItem(localKey(date), JSON.stringify(local));
+  }
+}
+
+function displayData(data) {
+  prices.forEach(price => {
+    const row = data[price] || { existing: 0, brought: 0, sold: 0, removed: 0, manualSold: false };
+    document.getElementById(`existing-${price}`).value = row.existing ?? 0;
+    document.getElementById(`brought-${price}`).value = row.brought ?? 0;
+    document.getElementById(`available-${price}`).value =
+      (Number(row.existing) || 0) + (Number(row.brought) || 0);
+    document.getElementById(`removed-${price}`).value = row.removed ?? 0;
+    document.getElementById(`sold-${price}`).value = row.sold ?? 0;
+    document.getElementById(`sold-${price}`).dataset.manual = row.manualSold ? "true" : "false";
+  });
+
+  calculer(false);
+}
+
+function buildInputs() {
+  prices.forEach(price => {
+    const row = document.createElement("div");
+    row.className = "price-row";
+    row.innerHTML = `
+      <div class="price">${price} RD$</div>
+      <div>
+        <input type="number" min="0" step="1" value="0"
+               id="existing-${price}" inputmode="numeric" aria-label="Reste de la veille ${price} RD$">
+      </div>
+      <div>
+        <input type="number" min="0" step="1" value="0"
+               id="brought-${price}" inputmode="numeric" aria-label="Apportés ${price} RD$">
+      </div>
+      <div>
+        <input type="number" min="0" value="0" readonly
+               id="available-${price}" aria-label="Total ${price} RD$"
+               style="background:#f1f1f1;font-weight:bold;">
+      </div>
+      <div>
+        <input type="number" min="0" step="1" value="0"
+               id="removed-${price}" inputmode="numeric" aria-label="Retirés ou perdus ${price} RD$">
+      </div>
+      <div>
+        <input type="number" min="0" step="1" value="0"
+               id="sold-${price}" aria-label="Vendus ${price} RD$"
+               style="background:#eaf7ed;font-weight:bold;">
+      </div>
+    `;
+    pricesContainer.appendChild(row);
+  });
+
+  document.querySelectorAll("#prices input").forEach(input => {
+    input.addEventListener("input", () => {
+      if (input.id.startsWith("sold-")) {
+        input.dataset.manual = "true";
+      }
+      mettreAJourTotaux();
+      calculer(false);
+      programmerSauvegarde();
+    });
+  });
+}
+
+function mettreAJourTotaux() {
+  prices.forEach(price => {
+    const existing = Number(document.getElementById(`existing-${price}`).value) || 0;
+    const brought = Number(document.getElementById(`brought-${price}`).value) || 0;
+    document.getElementById(`available-${price}`).value = existing + brought;
+  });
+}
+
+function calculer(showMessage = true) {
+  const data = getFormData();
+
+  let totalExisting = 0;
+  let totalBrought = 0;
+  let totalAvailable = 0;
+  let totalSold = 0;
+  let gross = 0;
+
+  prices.forEach(price => {
+    const item = data[price];
+    totalExisting += item.existing;
+    totalBrought += item.brought;
+    totalAvailable += item.existing + item.brought;
+    totalSold += item.sold;
+    gross += item.sold * price;
+  });
+
+  const commission = gross * 0.15;
+  const net = gross - commission;
+
+  document.getElementById("totalExisting").textContent = totalExisting;
+  document.getElementById("totalAvailable").textContent = totalAvailable;
+  document.getElementById("totalSold").textContent = totalSold;
+
+  document.getElementById("gross").textContent =
+    gross.toLocaleString("fr-FR") + " RD$";
+
+  document.getElementById("commission").textContent =
+    commission.toLocaleString("fr-FR") + " RD$";
+
+  document.getElementById("net").textContent =
+    net.toLocaleString("fr-FR") + " RD$";
+
+  message.textContent = showMessage ? "✅ Calcul effectué." : "";
+  message.style.color = "#23733b";
+
+  return data;
+}
+
+
+function previousDateISO(dateString) {
+  const d = new Date(dateString + "T12:00:00");
+  d.setDate(d.getDate() - 1);
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,'0');
+  const day = String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${day}`;
+}
+
+async function getDayDataForCalculation(date) {
+  const remote = await chargerDepuisSupabase(date);
+  if (remote && remote.donnees) return remote.donnees;
+  const local = getLocal(date);
+  return local && local.data ? local.data : null;
+}
+
+async function finaliserJourPrecedent(dateSuivant, dataSuivant) {
+  const prevDate = previousDateISO(dateSuivant);
+  const prevData = await getDayDataForCalculation(prevDate);
+  if (!prevData) return;
+
+  let changed = false;
+
+  prices.forEach(price => {
+    const prev = prevData[price] || {existing:0,brought:0,sold:0,removed:0,manualSold:false};
+    const next = dataSuivant[price] || {existing:0};
+    const available = (Number(prev.existing)||0) + (Number(prev.brought)||0);
+    const removed = Number(prev.removed)||0;
+    const nextMorningRemaining = Number(next.existing)||0;
+    const possibleSold = available - removed - nextMorningRemaining;
+
+    const soldCalculated = Math.max(0, possibleSold);
+    // Une vente saisie manuellement reste prioritaire.
+    // Sinon, le nombre de ventes est calculé automatiquement le matin suivant.
+    if (!prev.manualSold) {
+      if ((Number(prev.sold)||0) !== soldCalculated) changed = true;
+      prev.sold = soldCalculated;
+    }
+    prevData[price] = prev;
+  });
+
+  if (!changed) return;
+
+  putLocal(prevDate, prevData);
+  if (navigator.onLine) {
+    try {
+      const { error } = await supabaseClient.from("comptabilite_jours").upsert({
+        jour: prevDate,
+        donnees: prevData,
+        updated_at: new Date().toISOString()
+      }, { onConflict: "jour" });
+      if (error) throw error;
+      clearPendingLocal(prevDate);
+    } catch (e) {
+      console.error("Erreur finalisation veille :", e);
+    }
+  }
+
+  // Les ventes de la veille sont recalculées automatiquement avec le nombre
+  // de gâteaux comptés ce matin dans « Reste veille ».
+}
+async function sauverJour(date = currentDate, data = getFormData()) {
+  if (!date) return;
+
+  putLocal(date, data);
+
+  if (!navigator.onLine) {
+    setStatus("📱 Hors ligne — enregistré sur le téléphone", "wait");
+    return;
+  }
+
+  setStatus("☁️ Synchronisation…", "wait");
+
+  try {
+    const { error } = await supabaseClient
+      .from("comptabilite_jours")
+      .upsert(
+        {
+          jour: date,
+          donnees: data,
+          updated_at: new Date().toISOString()
+        },
+        { onConflict: "jour" }
+      );
+
+    if (error) throw error;
+
+    clearPendingLocal(date);
+    await finaliserJourPrecedent(date, data);
+    setStatus("✓ Synchronisé", "ok");
+    if (typeof window.refreshDashboard === "function") window.refreshDashboard();
+  } catch (error) {
+    console.error("Erreur Supabase :", error);
+    setStatus("⚠️ En attente de connexion", "wait");
+  }
+}
+
+function programmerSauvegarde() {
+  clearTimeout(saveTimer);
+
+  // On capture la date au moment de la saisie.
+  // Ainsi, si on passe rapidement de vendredi à samedi/dimanche/lundi,
+  // la sauvegarde en attente reste bien attachée au bon jour.
+  const dateToSave = dateInput.value;
+  currentDate = dateToSave;
+  const data = getFormData();
+  putLocal(dateToSave, data);
+
+  setStatus("💾 Enregistrement local…", "wait");
+
+  saveTimer = setTimeout(() => {
+    sauverJour(dateToSave, data);
+  }, 700);
+}
+
+async function chargerDepuisSupabase(date) {
+  if (!navigator.onLine) return null;
+
+  try {
+    const { data, error } = await supabaseClient
+      .from("comptabilite_jours")
+      .select("jour, donnees, updated_at")
+      .eq("jour", date)
+      .maybeSingle();
+
+    if (error) throw error;
+
+    return data || null;
+  } catch (error) {
+    console.error("Lecture Supabase :", error);
+    return null;
+  }
+}
+
+
+async function chargerJour() {
+  currentDate = dateInput.value;
+  if (!currentDate) return;
+
+  message.textContent = "Chargement…";
+  setStatus("☁️ Recherche des données…", "wait");
+
+  const local = getLocal(currentDate);
+  const remote = await chargerDepuisSupabase(currentDate);
+
+  /*
+    Si une donnée distante existe, elle est prioritaire.
+    Sinon, on utilise la copie locale.
+  */
+  if (remote && remote.donnees) {
+    displayData(remote.donnees);
+    localStorage.setItem(localKey(currentDate), JSON.stringify({
+      date: currentDate,
+      data: remote.donnees,
+      savedAt: remote.updated_at || new Date().toISOString(),
+      pending: false,
+      syncedAt: new Date().toISOString()
+    }));
+    message.textContent = "☁️ Journée chargée depuis Supabase.";
+    setStatus("✓ Synchronisé", "ok");
+  } else if (local && local.data) {
+    displayData(local.data);
+    message.textContent = local.pending
+      ? "📱 Copie locale chargée — elle sera synchronisée automatiquement."
+      : "📱 Copie locale chargée.";
+    setStatus(
+      local.pending ? "📱 En attente de synchronisation" : "✓ Synchronisé",
+      local.pending ? "wait" : "ok"
+    );
+
+    if (navigator.onLine && local.pending) {
+      await sauverJour(currentDate, local.data);
+    }
+  } else {
+    displayData(getEmptyData());
+    message.textContent = "Nouvelle journée.";
+    setStatus(navigator.onLine ? "✓ Connecté" : "📱 Hors ligne", navigator.onLine ? "ok" : "wait");
+  }
+}
+
+async function calculerEtSauver() {
+  const dateSauvee = currentDate;
+  const data = calculer(true);
+
+  // 1) Sauvegarder d'abord la journée actuellement affichée.
+  await sauverJour(dateSauvee, data);
+
+  // 2) Si cette journée contient le comptage du matin, finaliser la veille.
+  const veille = previousDateISO(dateSauvee);
+  const veilleAvant = await getDayDataForCalculation(veille);
+  let ventesVeilleCalculees = false;
+
+  if (veilleAvant) {
+    for (const price of prices) {
+      const item = veilleAvant[price] || {};
+      if (!item.manualSold) {
+        const disponible = (Number(item.existing) || 0) + (Number(item.brought) || 0);
+        const retires = Number(item.removed) || 0;
+        const resteCeMatin = Number(data[price]?.existing) || 0;
+        const nouvellesVentes = Math.max(0, disponible - retires - resteCeMatin);
+        if ((Number(item.sold) || 0) !== nouvellesVentes) {
+          item.sold = nouvellesVentes;
+          veilleAvant[price] = item;
+          ventesVeilleCalculees = true;
+        }
+      }
+    }
+
+    if (ventesVeilleCalculees) {
+      await sauverJour(veille, veilleAvant);
+      message.textContent = `✅ Journée enregistrée. Les ventes du ${dateLocale(veille)} ont été calculées automatiquement avec le reste compté ce matin.`;
+      message.style.color = '#23733b';
+    }
+  }
+
+  // 3) Recharger les deux affichages après le calcul : la semaine ET le tableau de bord.
+  await chargerSemaine(dateSauvee);
+  if (typeof window.refreshDashboard === 'function') await window.refreshDashboard();
+  if (typeof window.loadWeekHistory === 'function') await window.loadWeekHistory();
+}
+
+async function synchroniserEnAttente() {
+  if (!navigator.onLine) {
+    setStatus("📱 Hors ligne", "wait");
+    return;
+  }
+
+  const local = getLocal(currentDate);
+  if (local && local.pending) {
+    await sauverJour(currentDate, local.data);
+  } else {
+    setStatus("✓ Synchronisé", "ok");
+  }
+}
+
+function activerTempsReel() {
+  if (realtimeChannel) {
+    supabaseClient.removeChannel(realtimeChannel);
+  }
+
+  realtimeChannel = supabaseClient
+    .channel("comptabilite-temps-reel")
+    .on(
+      "postgres_changes",
+      {
+        event: "*",
+        schema: "public",
+        table: "comptabilite_jours",
+        filter: `jour=eq.${currentDate}`
+      },
+      payload => {
+        if (!payload.new || !payload.new.donnees) return;
+
+        /*
+          Quand l'autre appareil modifie la journée, le navigateur
+          reçoit immédiatement la nouvelle valeur.
+        */
+        displayData(payload.new.donnees);
+        chargerSemaine(currentDate);
+        localStorage.setItem(localKey(currentDate), JSON.stringify({
+          date: currentDate,
+          data: payload.new.donnees,
+          savedAt: payload.new.updated_at || new Date().toISOString(),
+          pending: false,
+          syncedAt: new Date().toISOString()
+        }));
+        setStatus("✓ Mis à jour depuis l'autre appareil", "ok");
+      }
+    )
+    .subscribe(status => {
+      console.log("Realtime :", status);
+    });
+}
+
+
+function getWeekBounds(dateString) {
+  const d = new Date(dateString + "T12:00:00");
+  const day = d.getDay(); // dimanche=0 ... vendredi=5
+  const daysSinceFriday = (day - 5 + 7) % 7;
+  const start = new Date(d);
+  start.setDate(d.getDate() - daysSinceFriday);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  const toISO = x => {
+    const y = x.getFullYear();
+    const m = String(x.getMonth()+1).padStart(2,'0');
+    const day2 = String(x.getDate()).padStart(2,'0');
+    return `${y}-${m}-${day2}`;
+  };
+  return { start: toISO(start), end: toISO(end) };
+}
+
+function formatShortDate(dateString) {
+  return new Date(dateString + "T12:00:00").toLocaleDateString("fr-FR", {
+    weekday: "short", day: "2-digit", month: "2-digit"
+  });
+}
+
+function dayDataTotals(data) {
+  let sold = 0, gross = 0;
+  prices.forEach(price => {
+    const item = data?.[price] || {};
+    const qty = Number(item.sold) || 0;
+    sold += qty;
+    gross += qty * price;
+  });
+  const commission = gross * 0.15;
+  return { sold, gross, commission, net: gross - commission };
+}
+
+async function chargerSemaine(dateString = currentDate) {
+  const bounds = getWeekBounds(dateString);
+  const weekRows = document.getElementById("weekRows");
+  const weekFooter = document.getElementById("weekFooter");
+  const weekMessage = document.getElementById("weekMessage");
+  const weekRange = document.getElementById("weekRange");
+
+  const startLabel = new Date(bounds.start + "T12:00:00").toLocaleDateString("fr-FR", {day:"numeric", month:"long"});
+  const endLabel = new Date(bounds.end + "T12:00:00").toLocaleDateString("fr-FR", {day:"numeric", month:"long", year:"numeric"});
+  weekRange.textContent = `Du vendredi ${startLabel} au jeudi ${endLabel}`;
+  weekMessage.textContent = "Chargement de la semaine…";
+  weekRows.innerHTML = "";
+  weekFooter.innerHTML = "";
+
+  let records = [];
+  let remoteOk = false;
+  if (navigator.onLine) {
+    try {
+      const { data, error } = await supabaseClient
+        .from("comptabilite_jours")
+        .select("jour, donnees")
+        .gte("jour", bounds.start)
+        .lte("jour", bounds.end)
+        .order("jour", { ascending: true });
+      if (error) throw error;
+      records = data || [];
+      remoteOk = true;
+    } catch (error) {
+      console.error("Erreur semaine Supabase :", error);
+      weekMessage.textContent = "⚠️ Impossible de charger la semaine depuis Supabase — affichage des copies locales.";
+    }
+  }
+
+  const byDate = {};
+  records.forEach(r => { byDate[r.jour] = r.donnees || {}; });
+
+  // Les données locales en attente restent prises en compte, même hors ligne.
+  const startForLocal = new Date(bounds.start + "T12:00:00");
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(startForLocal);
+    d.setDate(startForLocal.getDate() + i);
+    const y = d.getFullYear();
+    const m = String(d.getMonth()+1).padStart(2,'0');
+    const day = String(d.getDate()).padStart(2,'0');
+    const iso = `${y}-${m}-${day}`;
+    const local = getLocal(iso);
+    if (local && local.data && (!remoteOk || local.pending || !Object.prototype.hasOwnProperty.call(byDate, iso))) {
+      byDate[iso] = local.data;
+    }
+  }
+
+  let totalSold = 0, totalGross = 0, totalCommission = 0, totalNet = 0;
+  const start = new Date(bounds.start + "T12:00:00");
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(start);
+    d.setDate(start.getDate() + i);
+    const y = d.getFullYear();
+    const m = String(d.getMonth()+1).padStart(2,'0');
+    const day = String(d.getDate()).padStart(2,'0');
+    const iso = `${y}-${m}-${day}`;
+    const t = dayDataTotals(byDate[iso]);
+    totalSold += t.sold; totalGross += t.gross; totalCommission += t.commission; totalNet += t.net;
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${formatShortDate(iso)}</td><td>${t.sold}</td><td>${t.gross.toLocaleString("fr-FR")} RD$</td><td>${t.commission.toLocaleString("fr-FR")} RD$</td><td>${t.net.toLocaleString("fr-FR")} RD$</td>`;
+    weekRows.appendChild(tr);
+  }
+
+  weekFooter.innerHTML = `<tr class="week-total"><td>TOTAL SEMAINE</td><td>${totalSold}</td><td>${totalGross.toLocaleString("fr-FR")} RD$</td><td>${totalCommission.toLocaleString("fr-FR")} RD$</td><td>${totalNet.toLocaleString("fr-FR")} RD$</td></tr>`;
+  document.getElementById("weekGross").textContent = totalGross.toLocaleString("fr-FR") + " RD$";
+  document.getElementById("weekCommission").textContent = totalCommission.toLocaleString("fr-FR") + " RD$";
+  document.getElementById("weekNet").textContent = totalNet.toLocaleString("fr-FR") + " RD$";
+  document.getElementById("weekSold").textContent = totalSold;
+  if (!weekMessage.textContent.startsWith("⚠️")) {
+    weekMessage.textContent = "La semaine Lindo est calculée automatiquement du vendredi au jeudi.";
+  }
+}
+
+dateInput.value = new Date().toISOString().slice(0, 10);
+
+window.addEventListener("online", async () => {
+  setStatus("🌐 Internet revenu — synchronisation…", "wait");
+  await synchroniserEnAttente();
+  await chargerJour();
+  await chargerSemaine(currentDate);
+});
+
+window.addEventListener("offline", () => {
+  setStatus("📱 Hors ligne — les données restent sur l'appareil", "wait");
+});
+
+dateInput.addEventListener("change", async () => {
+  const previousDate = currentDate;
+  const nextDate = dateInput.value;
+
+  // Si on change de jour juste après une saisie, on termine d'abord
+  // la sauvegarde du jour précédent pour éviter qu'elle soit perdue
+  // ou enregistrée sous le nouveau jour.
+  clearTimeout(saveTimer);
+  if (previousDate && previousDate !== nextDate) {
+    const pendingPrevious = getLocal(previousDate);
+    if (pendingPrevious && pendingPrevious.data) {
+      await sauverJour(previousDate, pendingPrevious.data);
+    }
+  }
+
+  currentDate = nextDate;
+  await chargerJour();
+  await chargerSemaine(currentDate);
+  activerTempsReel();
+});
+
+buildInputs();
+mettreAJourTotaux();
+currentDate = dateInput.value;
+
+(async function init() {
+  if (!navigator.onLine) {
+    await chargerJour();
+    await chargerSemaine(currentDate);
+    activerTempsReel();
+    return;
+  }
+
+  try {
+    const { error } = await supabaseClient
+      .from("comptabilite_jours")
+      .select("jour")
+      .limit(1);
+
+    if (error) throw error;
+
+    setStatus("✓ Connecté à Supabase", "ok");
+  } catch (error) {
+    console.error(error);
+    setStatus("⚠️ Supabase à configurer", "error");
+  }
+
+  await chargerJour();
+  await chargerSemaine(currentDate);
+  activerTempsReel();
+})();
+</script>
+
+<script>
+(function(){
+  const PRICES = [60,250,260,280,300,310];
+  const DAYS = ['Vendredi','Samedi','Dimanche','Lundi','Mardi','Mercredi','Jeudi'];
+  const COMMISSION = 0.15;
+
+  function fmt(n){ return new Intl.NumberFormat('fr-FR').format(Math.round(n||0)) + ' RD$'; }
+  function iso(d){ return d.toISOString().slice(0,10); }
+  function weekStart(dateStr){
+    const d = new Date(dateStr+'T12:00:00');
+    const dow = d.getDay(); // Sun=0
+    const diff = (dow - 5 + 7) % 7;
+    d.setDate(d.getDate()-diff);
+    return d;
+  }
+  function dateRange(start){
+    const a=[]; for(let i=0;i<7;i++){const d=new Date(start);d.setDate(d.getDate()+i);a.push(iso(d));} return a;
+  }
+  function getLocal(date){
+    try{
+      const raw=localStorage.getItem(LOCAL_PREFIX + date);
+      if(raw){
+        const parsed=JSON.parse(raw);
+        return parsed && parsed.data ? parsed.data : parsed;
+      }
+      // Compatibilité avec d'anciennes versions.
+      const raw2=localStorage.getItem('comptabilite_'+date);
+      if(raw2){
+        const parsed2=JSON.parse(raw2);
+        return parsed2 && parsed2.data ? parsed2.data : parsed2;
+      }
+      const raw3=localStorage.getItem('comptabilite_jour_'+date);
+      if(raw3){
+        const parsed3=JSON.parse(raw3);
+        return parsed3 && parsed3.data ? parsed3.data : parsed3;
+      }
+    }catch(e){}
+    return null;
+  }
+  function soldAndGross(data){
+    let sold=0,gross=0;
+    if(!data) return {sold,gross,byPrice:{}};
+    const byPrice={};
+    for(const p of PRICES) byPrice[p]=0;
+
+    // Format actuel de l'application : { "60": {sold:...}, "250": {sold:...}, ... }
+    if (!Array.isArray(data) && typeof data === 'object' && PRICES.some(p => Object.prototype.hasOwnProperty.call(data, p))) {
+      for (const p of PRICES) {
+        const row = data[p] || {};
+        const q = Number(row.sold ?? row.vendus ?? 0) || 0;
+        if (q > 0) {
+          sold += q;
+          gross += q * p;
+          byPrice[p] += q;
+        }
+      }
+      return {sold,gross,byPrice};
+    }
+
+    // Compatibilité avec les anciens formats de données.
+    const rows = data.rows || data.produits || data.data || data;
+    const arr = Array.isArray(rows) ? rows : Object.values(rows||{});
+    for(const r of arr){
+      const price=Number(r.prix ?? r.price ?? r.p ?? 0);
+      const q=Number(r.vendus ?? r.sold ?? r.quantiteVendue ?? r.q ?? 0);
+      if(Number.isFinite(q) && q>0 && Number.isFinite(price)){
+        sold+=q; gross+=q*price;
+        if(byPrice[price]!=null) byPrice[price]+=q;
+      }
+    }
+    return {sold,gross,byPrice};
+  }
+  async function fetchDay(date){
+    const local=getLocal(date);
+    try{
+      if(typeof supabaseClient !== 'undefined' && supabaseClient.from){
+        const {data,error}=await supabaseClient.from('comptabilite_jours').select('donnees').eq('jour',date).maybeSingle();
+        if(!error && data && data.donnees) return data.donnees;
+      }
+    }catch(e){}
+    return local;
+  }
+  async function refresh(){
+    const selected = (document.querySelector('#date')||document.querySelector('input[type=date]'))?.value || iso(new Date());
+    const start=weekStart(selected), dates=dateRange(start);
+    const records=await Promise.all(dates.map(fetchDay));
+    let gross=0,sold=0; const daily=[];
+    const productTotals={}; PRICES.forEach(p=>productTotals[p]=0);
+    records.forEach((rec,i)=>{
+      const x=soldAndGross(rec); gross+=x.gross;sold+=x.sold;daily.push(x.gross);
+      Object.keys(x.byPrice).forEach(p=>productTotals[p]+=x.byPrice[p]);
+    });
+    const commission=gross*COMMISSION, net=gross-commission;
+    const el=id=>document.getElementById(id);
+    if(el('dashGross'))el('dashGross').textContent=fmt(gross);
+    if(el('dashCommission'))el('dashCommission').textContent=fmt(commission);
+    if(el('dashNet'))el('dashNet').textContent=fmt(net);
+    if(el('dashSold'))el('dashSold').textContent=new Intl.NumberFormat('fr-FR').format(sold);
+    if(el('dashboardWeekLabel')){
+      const end=new Date(start);end.setDate(end.getDate()+6);
+      el('dashboardWeekLabel').textContent='Semaine Lindo — '+start.toLocaleDateString('fr-FR')+' → '+end.toLocaleDateString('fr-FR');
+    }
+    const max=Math.max(...daily,1);
+    if(el('weekBars'))el('weekBars').innerHTML=daily.map((v,i)=>'<div class="day-bar"><div class="amount">'+Math.round(v).toLocaleString('fr-FR')+' RD$</div><div class="bar" style="height:'+Math.max(3,Math.round(v/max*130))+'px"></div><div class="day">'+DAYS[i].slice(0,3)+'</div></div>').join('');
+    const tops=Object.entries(productTotals).sort((a,b)=>b[1]-a[1]).filter(x=>x[1]>0).slice(0,5);
+    if(el('topProducts'))el('topProducts').innerHTML=tops.length?tops.map((x,i)=>'<div class="top-product"><b>'+(i+1)+'.</b><span>Produit '+x[0]+' RD$</span><strong>'+x[1]+'</strong></div>').join(''):'<div class="muted">Les ventes apparaîtront ici.</div>';
+    const goal=Number(el('weeklyGoal')?.value||35000), pct=goal>0?Math.min(100,gross/goal*100):0;
+    if(el('goalProgress'))el('goalProgress').style.width=pct.toFixed(1)+'%';
+    if(el('goalText'))el('goalText').textContent=fmt(gross)+' / '+fmt(goal)+' — '+Math.round(pct)+' %';
+  }
+  window.refreshDashboard = refresh;
+  function init(){
+    const goal=document.getElementById('weeklyGoal'); if(goal)goal.addEventListener('input',refresh);
+    document.addEventListener('change',e=>{if(e.target.matches('input[type=date]')) setTimeout(refresh,150);});
+    setTimeout(refresh,500);
+    setInterval(refresh,15000);
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
+})();
+</script>
+
+
+<script>
+(function(){
+  function fmtRD(n){ return Math.round(n||0).toLocaleString("fr-FR") + " RD$"; }
+  function weekStartISO(dateStr){
+    const d = new Date(dateStr + "T12:00:00");
+    const diff = (d.getDay() - 5 + 7) % 7;
+    d.setDate(d.getDate() - diff);
+    return d.toISOString().slice(0,10);
+  }
+  function weekLabel(startISO){
+    const s = new Date(startISO+"T12:00:00");
+    const e = new Date(s); e.setDate(e.getDate()+6);
+    return s.toLocaleDateString("fr-FR",{day:"2-digit",month:"2-digit",year:"numeric"})+
+      " → "+e.toLocaleDateString("fr-FR",{day:"2-digit",month:"2-digit",year:"numeric"});
+  }
+
+  async function loadWeekHistory(){
+    const body=document.getElementById("historyBody");
+    if(!body || !window.supabaseClient) return;
+
+    body.innerHTML='<tr><td colspan="5" class="muted">Chargement de l’historique…</td></tr>';
+
+    try{
+      const {data,error}=await window.supabaseClient
+        .from("comptabilite_jours")
+        .select("jour, donnees")
+        .order("jour",{ascending:true});
+
+      if(error) throw error;
+
+      const weeks={};
+      (data||[]).forEach(row=>{
+        const start=weekStartISO(row.jour);
+        if(!weeks[start]) weeks[start]={sold:0,gross:0,commission:0,net:0};
+        const t=typeof dayDataTotals==="function"
+          ? dayDataTotals(row.donnees||{})
+          : {sold:0,gross:0,commission:0,net:0};
+        weeks[start].sold+=t.sold;
+        weeks[start].gross+=t.gross;
+        weeks[start].commission+=t.commission;
+        weeks[start].net+=t.net;
+      });
+
+      const entries=Object.entries(weeks).sort((a,b)=>b[0].localeCompare(a[0]));
+
+      if(!entries.length){
+        body.innerHTML='<tr><td colspan="5" class="muted">Aucune semaine enregistrée pour le moment.</td></tr>';
+        return;
+      }
+
+      body.innerHTML=entries.map(([start,t])=>`
+        <tr>
+          <td><strong>${weekLabel(start)}</strong></td>
+          <td>${t.sold}</td>
+          <td>${fmtRD(t.gross)}</td>
+          <td>${fmtRD(t.commission)}</td>
+          <td><strong>${fmtRD(t.net)}</strong></td>
+        </tr>`).join("");
+    }catch(e){
+      console.error("Historique semaines:",e);
+      body.innerHTML='<tr><td colspan="5">⚠️ Impossible de charger l’historique. Vérifie la connexion.</td></tr>';
+    }
+  }
+
+  window.loadWeekHistory=loadWeekHistory;
+
+  function initHistory(){
+    loadWeekHistory();
+  }
+
+  if(document.readyState==="loading") document.addEventListener("DOMContentLoaded",initHistory);
+  else initHistory();
+})();
+</script>
+
+</body>
+</html>
