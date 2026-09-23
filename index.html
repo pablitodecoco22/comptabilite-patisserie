@@ -183,7 +183,7 @@ Tu ne renseignes donc pas un « reste fin de journée ». Le mercredi matin, tu 
    CONFIGURATION
    ========================================================== */
 const SUPABASE_URL = "https://rutowrlwqhgzfsftrtxz.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzIiwicmVmIjoicnV0b3dybHdxaGhnemZzZnRyeHh6Iiwicm9sIjoiYW5vbiIsImlhdCI6MTc4OTgzNzMyNywiZXhwIjoyMTA1NDEzMzI3fQ.pVO5PlIdkwz0EzlysvmVBdsxkGrPN7kkwBXnpM4V7Es";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ1dG93cmx3cWhnemZzZnRydHh6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk4MzczMjcsImV4cCI6MjEwNTQxMzMyN30.pVO5PlIdkwz0EzlysvmVBdsxkGrPN7kkwBXnpM4V7Es";
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const PRICES = [60,250,260,280,300,310];
@@ -371,49 +371,57 @@ function calculate(show=true){
 /* ==========================================================
    SUPABASE
    ========================================================== */
-async function remoteDay(date){
-  if(!navigator.onLine)return null;
-  try{
-    const controller=new AbortController();
-    const timer=setTimeout(()=>controller.abort(),8000);
-    const response=await fetch(`${SUPABASE_URL}/rest/v1/comptabilite_jours?select=jour,donnees,updated_at&jour=eq.${encodeURIComponent(date)}`,{
-      method:"GET",
-      headers:{"apikey":SUPABASE_ANON_KEY,"Authorization":`Bearer ${SUPABASE_ANON_KEY}`},
-      signal:controller.signal
-    });
-    clearTimeout(timer);
-    if(!response.ok)throw new Error(`SUPABASE_${response.status}`);
-    const rows=await response.json();
-    return rows[0]||null;
-  }catch(e){
-    console.error("Lecture Supabase:",e);
-    return null;
-  }
-}
-
-async function upsertDay(date,data){
+async function supabaseFetch(path, options={}){
   const controller=new AbortController();
-  const timer=setTimeout(()=>controller.abort(),8000);
+  const timer=setTimeout(()=>controller.abort(),10000);
   try{
-    const response=await fetch(`${SUPABASE_URL}/rest/v1/comptabilite_jours?on_conflict=jour`,{
-      method:"POST",
+    const response=await fetch(SUPABASE_URL+path,{
+      ...options,
+      cache:"no-store",
+      signal:controller.signal,
       headers:{
-        "apikey":SUPABASE_ANON_KEY,
-        "Authorization":`Bearer ${SUPABASE_ANON_KEY}`,
+        apikey:SUPABASE_ANON_KEY,
+        Authorization:`Bearer ${SUPABASE_ANON_KEY}`,
         "Content-Type":"application/json",
-        "Accept":"application/json",
-        "Prefer":"resolution=merge-duplicates,return=minimal"
-      },
-      body:JSON.stringify([{jour:date,donnees:data,updated_at:new Date().toISOString()}]),
-      signal:controller.signal
+        ...(options.headers||{})
+      }
     });
+    const text=await response.text();
+    let body=null;
+    try{ body=text?JSON.parse(text):null; }catch(_){ body=text; }
     if(!response.ok){
-      const detail=await response.text().catch(()=>"");
-      throw new Error(`SUPABASE_${response.status}${detail?" — "+detail.slice(0,180):""}`);
+      const detail=(body&&typeof body==="object"&&(body.message||body.error_description||body.hint||body.details))||
+        (typeof body==="string"&&body)||response.statusText||"Erreur Supabase";
+      throw new Error(`SUPABASE_${response.status} — ${detail}`);
     }
+    return body;
+  }catch(e){
+    if(e?.name==="AbortError") throw new Error("SUPABASE_TIMEOUT — le serveur n'a pas répondu en 10 secondes");
+    if(e instanceof TypeError) throw new Error("SUPABASE_NETWORK — impossible de joindre Supabase depuis ce navigateur");
+    throw e;
   }finally{
     clearTimeout(timer);
   }
+}
+
+async function remoteDay(date){
+  if(!navigator.onLine)return null;
+  const rows=await supabaseFetch(`/rest/v1/comptabilite_jours?select=jour,donnees,updated_at&jour=eq.${encodeURIComponent(date)}&limit=1`,{
+    method:"GET",
+    headers:{Accept:"application/json"}
+  });
+  return Array.isArray(rows)&&rows.length?rows[0]:null;
+}
+
+async function upsertDay(date,data){
+  await supabaseFetch(`/rest/v1/comptabilite_jours?on_conflict=jour`,{
+    method:"POST",
+    headers:{
+      Prefer:"resolution=merge-duplicates,return=minimal",
+      Accept:"application/json"
+    },
+    body:JSON.stringify([{jour:date,donnees:data,updated_at:new Date().toISOString()}])
+  });
 }
 
 async function syncPendingDays(){
@@ -446,16 +454,13 @@ async function syncPendingDays(){
 
 function scheduleSyncRetry(){
   clearTimeout(syncRetryTimer);
+  syncRetryTimer=null;
+  // Une seule nouvelle tentative après quelques secondes.
+  // On ne boucle plus indéfiniment et on ne remplace pas l'erreur réelle.
   syncRetryTimer=setTimeout(async()=>{
-    if(!navigator.onLine)return scheduleSyncRetry();
-    const ok=await syncPendingDays();
-    if(ok){
-      setStatus("✓ Synchronisé","ok");
-      if(currentDate) await loadDay();
-    }else{
-      setStatus("⚠️ Synchronisation cloud en échec — données conservées","error");
-      scheduleSyncRetry();
-    }
+    syncRetryTimer=null;
+    if(!navigator.onLine)return;
+    await syncPendingDays();
   },5000);
 }
 
@@ -488,17 +493,24 @@ async function loadDay(){
         setStatus("✓ Synchronisé","ok");
       }catch(e){
         console.error("Synchronisation locale:",e);
-        // Les données sont déjà conservées sur le téléphone.
-        // Ne pas laisser un faux « attente » permanent à l'écran.
+        // Les données restent sur le téléphone. Afficher LA vraie erreur
+        // au lieu du message générique « nouvelle tentative ».
         if(myToken===loadToken && $("date").value===date){
-          $("message").textContent="📱 Données conservées sur le téléphone — nouvelle tentative automatique.";
-          setStatus("⚠️ Cloud inaccessible — données conservées", "error");
-          scheduleSyncRetry();
+          $("message").textContent="❌ Échec Supabase : "+(e?.message||"erreur inconnue");
+          $("message").style.color="#a52b2b";
+          setStatus("❌ Synchronisation échouée", "error");
         }
       }
     }
   }else{
-    const remote=await remoteDay(date);
+    let remote=null;
+    let remoteError=null;
+    try{
+      remote=await remoteDay(date);
+    }catch(e){
+      remoteError=e;
+      console.error("Chargement Supabase:",e);
+    }
     if(myToken!==loadToken || $("date").value!==date)return;
 
     if(remote?.donnees){
@@ -508,8 +520,14 @@ async function loadDay(){
       setStatus("✓ Synchronisé","ok");
     }else if(local?.data){
       displayData(local.data);
-      $("message").textContent="📱 Copie locale chargée.";
-      setStatus("✓ Synchronisé","ok");
+      $("message").textContent=remoteError
+        ? "📱 Copie locale chargée — Supabase : "+(remoteError.message||"erreur")
+        : "📱 Copie locale chargée.";
+      setStatus(remoteError?"⚠️ Supabase en erreur — local conservé":"✓ Synchronisé",remoteError?"error":"ok");
+    }else if(remoteError){
+      displayData(emptyData());
+      $("message").textContent="❌ Lecture Supabase impossible : "+(remoteError.message||"erreur inconnue");
+      setStatus("❌ Supabase inaccessible","error");
     }else{
       displayData(emptyData());
       $("message").textContent="Nouvelle journée.";
@@ -959,10 +977,11 @@ async function saveCurrentDay(){
     console.error("ERREUR ENREGISTREMENT :",error);
 
     $("message").textContent=
-      "⚠️ Une erreur est survenue pendant l'enregistrement. Les données sont conservées sur le téléphone.";
+      "❌ Enregistrement cloud impossible : "+(error?.message||"erreur inconnue")+
+      ". Les données sont conservées sur cet appareil.";
 
     $("message").style.color="#a52b2b";
-    setStatus("⚠️ En attente de synchronisation","wait");
+    setStatus("📱 Données locales conservées","wait");
   }
 }
 
@@ -999,8 +1018,11 @@ function scheduleSave(){
       setStatus("✓ Sauvegarde automatique","ok");
     }catch(error){
       console.error("Auto-save:",error);
-      setStatus("⚠️ Synchronisation cloud en échec — données conservées","error");
-      scheduleSyncRetry();
+      setStatus("📱 Cloud indisponible — données conservées","wait");
+      if(currentDate===date){
+        $("message").textContent="❌ Synchronisation cloud impossible : "+(error?.message||"erreur inconnue")+". Les données restent enregistrées sur cet appareil.";
+        $("message").style.color="#a52b2b";
+      }
     }
   },700);
 }
@@ -1344,23 +1366,18 @@ window.addEventListener("offline",()=>{
 
   try{
     if(!navigator.onLine) throw new Error("HORS_LIGNE");
-    const controller=new AbortController();
-    const timer=setTimeout(()=>controller.abort(),8000);
-    const response=await fetch(`${SUPABASE_URL}/rest/v1/comptabilite_jours?select=jour&limit=1`,{
+    await supabaseFetch("/rest/v1/comptabilite_jours?select=jour&limit=1",{
       method:"GET",
-      headers:{"apikey":SUPABASE_ANON_KEY,"Authorization":`Bearer ${SUPABASE_ANON_KEY}`},
-      signal:controller.signal
+      headers:{Accept:"application/json"}
     });
-    clearTimeout(timer);
-    if(!response.ok){
-      const detail=await response.text().catch(()=>"");
-      throw new Error(`SUPABASE_${response.status}${detail?" — "+detail.slice(0,180):""}`);
-    }
     setStatus("✓ Connecté à Supabase","ok");
   }catch(e){
     console.error("Connexion Supabase:",e);
-    setStatus(navigator.onLine?"⚠️ Supabase inaccessible":"📱 Hors ligne","error");
+    setStatus(navigator.onLine?"❌ Supabase : erreur — voir le message rouge":"📱 Hors ligne","error");
+    $("message").textContent="❌ Connexion Supabase : "+(e?.message||"erreur inconnue");
+    $("message").style.color="#a52b2b";
   }
+
 
   await syncPendingDays();
   await loadDay();
