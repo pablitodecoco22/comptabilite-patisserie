@@ -1,0 +1,1231 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#222222">
+<title>Comptabilité Pâtisserie</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,sans-serif;background:#f7f4ef;color:#333}
+header{background:#fff;padding:18px 20px;text-align:center;border-bottom:1px solid #ddd;position:sticky;top:0;z-index:10}
+header h1{margin:0;font-size:25px} header p{margin:6px 0;color:#777}
+.sync-status{display:inline-block;margin-top:10px;padding:5px 10px;border-radius:20px;font-size:12px;background:#eee}
+.sync-ok{background:#eaf7ed;color:#23733b}.sync-wait{background:#fff4df;color:#8a5a00}.sync-error{background:#fdeaea;color:#a52b2b}
+.container{max-width:900px;margin:auto;padding:20px}
+.card{background:#fff;border-radius:14px;padding:20px;margin-bottom:20px;box-shadow:0 2px 10px rgba(0,0,0,.06)}
+h2{margin-top:0}
+.toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.date-input{flex:1;min-width:180px}.date-input input{margin-top:5px}
+input{width:100%;padding:11px;border:1px solid #ccc;border-radius:8px;font-size:16px}
+label{font-size:13px;color:#777;display:block;margin-bottom:4px}
+button{border:0;border-radius:9px;padding:13px 20px;font-size:16px;cursor:pointer;background:#222;color:#fff}
+button:hover{opacity:.9}.secondary{background:#666}.save{width:100%;margin-top:15px}
+.small{font-size:12px;color:#777;line-height:1.45}.message{margin-top:15px;font-size:14px}
+.stock-table-wrap,.week-table-wrap{width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}
+.stock-table{min-width:700px}
+.price-row{display:grid;grid-template-columns:70px repeat(5,105px);gap:6px;align-items:center;margin-bottom:8px}
+.price{font-weight:bold;font-size:15px;white-space:nowrap}
+.stock-header{margin-bottom:12px}.stock-header label{text-align:center;line-height:1.15;font-size:11px}
+.table-scroll-hint{display:none;margin-top:9px;font-size:12px;color:#777;text-align:center}
+.summary{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.summary-box{background:#f5f5f5;border-radius:10px;padding:15px;text-align:center}
+.summary-box strong{display:block;font-size:23px;margin-top:5px}
+.green{background:#eaf7ed}.orange{background:#fff4df}.blue{background:#eaf2ff}
+.dashboard-card{margin-top:18px}.section-title-row{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.muted{opacity:.68;font-size:.92rem}
+.stats-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:16px 0}
+.stat-box{padding:16px;border-radius:16px;background:linear-gradient(135deg,#fffaf2,#fff);border:1px solid #eadfce}
+.stat-label{font-size:.9rem;opacity:.72;margin-bottom:7px}.stat-box>div:last-child{font-size:1.45rem;font-weight:800}
+.dashboard-grid{display:grid;grid-template-columns:1.4fr 1fr;gap:18px;margin-top:16px}
+.dashboard-grid h3,.goal-box h3{margin:0 0 12px}
+.week-bars{display:flex;align-items:flex-end;gap:9px;height:190px;padding:10px 4px;border-bottom:1px solid #ddd}
+.day-bar{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;gap:5px}
+.day-bar .bar{width:100%;max-width:48px;border-radius:9px 9px 2px 2px;background:#c9892b;min-height:3px}
+.day-bar .day{font-size:.76rem}.day-bar .amount{font-size:.7rem;opacity:.7}
+.top-products{display:flex;flex-direction:column;gap:8px}
+.top-product{display:grid;grid-template-columns:30px 1fr auto;gap:8px;align-items:center;padding:10px 12px;border-radius:12px;background:#fffaf2}
+.goal-box{margin-top:18px;padding:16px;border-radius:16px;background:#fffaf2;border:1px solid #eadfce}
+.goal-box label{display:flex;align-items:center;gap:5px}.goal-box input{width:105px;padding:7px}
+.progress-track{height:15px;background:#eee;border-radius:999px;overflow:hidden}.progress-fill{height:100%;width:0;background:#c9892b;border-radius:999px;transition:width .3s}
+.goal-text{margin-top:8px;font-weight:700}
+.history-table,.week-table{width:100%;border-collapse:collapse}.history-table th,.history-table td,.week-table th,.week-table td{padding:10px 8px;border-bottom:1px solid #eee;text-align:right}
+.history-table th:first-child,.history-table td:first-child,.week-table th:first-child,.week-table td:first-child{text-align:left}
+.week-table th{background:#faf7f2}.week-total td{font-weight:800;background:#fff7e8}
+.week-range{margin-top:-8px;color:#666;font-size:14px}
+@media(max-width:800px){.stats-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.dashboard-grid{grid-template-columns:1fr}.summary{grid-template-columns:repeat(2,1fr)}.week-bars{height:160px}}
+@media(max-width:700px){.container{padding:12px}.card{padding:15px}.stock-card{padding:12px 10px 14px}.table-scroll-hint{display:block}.summary{grid-template-columns:1fr}.stats-grid{grid-template-columns:1fr 1fr}}
+</style>
+</head>
+<body>
+
+<header>
+<h1>🍰 Comptabilité Pâtisserie</h1>
+<p>Gestion simple par prix — synchronisation téléphone ↔ ordinateur</p>
+<span id="syncStatus" class="sync-status sync-wait">Connexion…</span>
+</header>
+
+<div class="container">
+
+<section class="card dashboard-card">
+<div class="section-title-row">
+<div><h2>📊 Tableau de bord</h2><div id="dashboardWeekLabel" class="muted">Semaine Lindo — vendredi → jeudi</div></div>
+</div>
+<div class="stats-grid">
+<div class="stat-box"><div class="stat-label">💰 CA brut semaine</div><div id="dashGross">0 RD$</div></div>
+<div class="stat-box"><div class="stat-label">💳 Commission Lindo</div><div id="dashCommission">0 RD$</div></div>
+<div class="stat-box"><div class="stat-label">💵 Net après Lindo</div><div id="dashNet">0 RD$</div></div>
+<div class="stat-box"><div class="stat-label">🧁 Gâteaux vendus</div><div id="dashSold">0</div></div>
+</div>
+<div class="dashboard-grid">
+<div><h3>📈 Ventes par jour</h3><div id="weekBars" class="week-bars"></div></div>
+<div><h3>🏆 Top ventes</h3><div id="topProducts" class="top-products"><div class="muted">Les ventes apparaîtront ici.</div></div></div>
+</div>
+<div class="goal-box">
+<div class="section-title-row"><h3>🎯 Objectif de semaine</h3><label>Objectif CA <input id="weeklyGoal" type="number" min="0" step="100" value="35000"> RD$</label></div>
+<div class="progress-track"><div id="goalProgress" class="progress-fill"></div></div>
+<div id="goalText" class="goal-text">0 / 35 000 RD$ — 0 %</div>
+</div>
+</section>
+
+<section class="card">
+<h2>📅 Journée</h2>
+<div class="toolbar">
+<div class="date-input"><label for="date">Date</label><input type="date" id="date"></div>
+<button class="secondary" id="loadButton">Charger</button>
+</div>
+<p class="small">
+Les ventes d'une journée sont calculées automatiquement le lendemain.
+Exemple : <strong>mercredi matin, tu renseignes le nombre de gâteaux restants de mardi dans « Reste veille ».</strong>
+L'application calcule alors automatiquement les ventes de mardi et son chiffre d'affaires.
+</p>
+</section>
+
+<section class="card stock-card">
+<div class="stock-table-wrap">
+<div class="stock-table">
+<div class="price-row stock-header">
+<div></div><div><label>Reste veille</label></div><div><label>Apportés</label></div>
+<div><label>Total</label></div><div><label>Retirés / perdus</label></div><div><label>Vendus</label></div>
+</div>
+<div id="prices"></div>
+</div>
+</div>
+<div class="table-scroll-hint">↔️ Fais glisser le tableau vers la gauche ou la droite pour voir toutes les colonnes.</div>
+<button class="save" id="saveButton">💾 Enregistrer / calculer</button>
+<p class="small">💡 « Vendus » se calcule automatiquement le lendemain. Tu peux aussi saisir « Vendus » manuellement pour une journée ancienne.</p>
+<p id="message" class="message"></p>
+<div id="previousDayResult" style="display:none;margin-top:15px;padding:16px;border-radius:12px;background:#eaf7ed;border:1px solid #bfe6c8;">
+  <strong id="previousDayTitle">Calcul de la veille</strong>
+  <div id="previousDayDetails" style="margin-top:7px;"></div>
+</div>
+</section>
+
+<section class="card">
+<h2>📊 Résultat du jour</h2>
+<div class="summary">
+<div class="summary-box blue">Déjà là<strong id="totalExisting">0</strong></div>
+<div class="summary-box green">Total disponible<strong id="totalAvailable">0</strong></div>
+<div class="summary-box orange">Articles vendus<strong id="totalSold">0</strong></div>
+<div class="summary-box">Ventes brutes<strong id="gross">0 RD$</strong></div>
+</div>
+</section>
+
+<section class="card">
+<h2>💰 Chiffre d'affaires</h2>
+<div class="summary">
+<div class="summary-box">Ventes brutes<strong id="gross2">0 RD$</strong></div>
+<div class="summary-box orange">Commission Lindo 15 %<strong id="commission">0 RD$</strong></div>
+<div class="summary-box green">Net après Lindo<strong id="net">0 RD$</strong></div>
+</div>
+</section>
+
+<section class="card">
+<h2>📅 Semaine Lindo</h2>
+<p id="weekRange" class="week-range">Du vendredi au jeudi</p>
+<div class="summary">
+<div class="summary-box">CA brut semaine<strong id="weekGross">0 RD$</strong></div>
+<div class="summary-box orange">Commission 15 %<strong id="weekCommission">0 RD$</strong></div>
+<div class="summary-box green">Net semaine<strong id="weekNet">0 RD$</strong></div>
+<div class="summary-box blue">Gâteaux vendus<strong id="weekSold">0</strong></div>
+</div>
+<div class="week-table-wrap" style="margin-top:16px">
+<table class="week-table">
+<thead><tr><th>Jour</th><th>Vendus</th><th>CA brut</th><th>Commission</th><th>Net</th></tr></thead>
+<tbody id="weekRows"></tbody><tfoot id="weekFooter"></tfoot>
+</table>
+</div>
+<p id="weekMessage" class="small"></p>
+</section>
+
+<section class="card">
+<h2>📚 Historique des semaines</h2>
+<table class="history-table">
+<thead><tr><th>Semaine</th><th>Vendus</th><th>CA brut</th><th>Commission</th><th>Net</th></tr></thead>
+<tbody id="historyBody"><tr><td colspan="5" class="muted">Chargement…</td></tr></tbody>
+</table>
+</section>
+
+<section class="card">
+<h2>📋 Comment ça fonctionne</h2>
+<p class="small">
+<strong>Ventes de mardi = stock disponible mardi − retirés/perdus mardi − reste compté mercredi matin.</strong>
+<br><br>
+Tu ne renseignes donc pas un « reste fin de journée ». Le mercredi matin, tu mets simplement ce qu'il reste des gâteaux de mardi dans <strong>Reste veille</strong>.
+</p>
+</section>
+
+</div>
+
+<script>
+/* ==========================================================
+   CONFIGURATION
+   ========================================================== */
+const SUPABASE_URL = "https://rutowrlwqhgzfsftrtxz.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzIiwicmVmIjoicnV0b3dybHdxaGhnemZzZnRyeHh6Iiwicm9sIjoiYW5vbiIsImlhdCI6MTc4OTgzNzMyNywiZXhwIjoyMTA1NDEzMzI3fQ.pVO5PlIdkwz0EzlysvmVBdsxkGrPN7kkwBXnpM4V7Es";
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+const PRICES = [60,250,260,280,300,310];
+const DAYS = ["Vendredi","Samedi","Dimanche","Lundi","Mardi","Mercredi","Jeudi"];
+const LOCAL_PREFIX = "comptabilite_patisserie_";
+const COMMISSION_RATE = 0.15;
+
+let currentDate = "";
+let saveTimer = null;
+let realtimeChannel = null;
+
+/* ==========================================================
+   OUTILS
+   ========================================================== */
+const $ = id => document.getElementById(id);
+
+function setStatus(text,type="wait"){
+  $("syncStatus").textContent=text;
+  $("syncStatus").className="sync-status "+(type==="ok"?"sync-ok":type==="error"?"sync-error":"sync-wait");
+}
+
+function money(n){
+  return Math.round(Number(n)||0).toLocaleString("fr-FR")+" RD$";
+}
+
+function dateISO(d){
+  const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,"0"),day=String(d.getDate()).padStart(2,"0");
+  return `${y}-${m}-${day}`;
+}
+
+function previousDateISO(date){
+  const d=new Date(date+"T12:00:00");
+  d.setDate(d.getDate()-1);
+  return dateISO(d);
+}
+
+function dateLocale(date){
+  return new Date(date+"T12:00:00").toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
+}
+
+function localKey(date){return LOCAL_PREFIX+date}
+
+function emptyData(){
+  const data={};
+  PRICES.forEach(p=>data[p]={existing:0,brought:0,removed:0,sold:0,manualSold:false});
+  return data;
+}
+
+function getLocal(date){
+  try{
+    const raw=localStorage.getItem(localKey(date));
+    if(!raw)return null;
+    const x=JSON.parse(raw);
+    return x && x.data ? x : {date,data:x,pending:false};
+  }catch(e){return null}
+}
+
+function saveLocal(date,data,pending=true){
+  localStorage.setItem(localKey(date),JSON.stringify({
+    date,data,savedAt:new Date().toISOString(),pending
+  }));
+}
+
+function markLocalSynced(date){
+  const x=getLocal(date);
+  if(x){
+    x.pending=false;
+    x.syncedAt=new Date().toISOString();
+    localStorage.setItem(localKey(date),JSON.stringify(x));
+  }
+}
+
+/* ==========================================================
+   FORMULAIRE
+   ========================================================== */
+function buildInputs(){
+  $("prices").innerHTML="";
+  PRICES.forEach(price=>{
+    const row=document.createElement("div");
+    row.className="price-row";
+    row.innerHTML=`
+      <div class="price">${price} RD$</div>
+      <div><input type="number" min="0" step="1" id="existing-${price}" value="0" inputmode="numeric"></div>
+      <div><input type="number" min="0" step="1" id="brought-${price}" value="0" inputmode="numeric"></div>
+      <div><input type="number" min="0" id="available-${price}" value="0" readonly style="background:#f1f1f1;font-weight:bold"></div>
+      <div><input type="number" min="0" step="1" id="removed-${price}" value="0" inputmode="numeric"></div>
+      <div><input type="number" min="0" step="1" id="sold-${price}" value="0" inputmode="numeric" style="background:#eaf7ed;font-weight:bold"></div>
+    `;
+    $("prices").appendChild(row);
+  });
+
+  document.querySelectorAll("#prices input").forEach(input=>{
+    input.addEventListener("input",()=>{
+      if(input.id.startsWith("sold-")) input.dataset.manual="true";
+      updateAvailable();
+      calculate(false);
+      scheduleSave();
+
+      // Si on modifie "Reste veille", calculer immédiatement la veille.
+      if(input.id.startsWith("existing-")){
+        previewPreviousDay();
+      }
+    });
+  });
+}
+
+function updateAvailable(){
+  PRICES.forEach(p=>{
+    const existing=Number($(`existing-${p}`).value)||0;
+    const brought=Number($(`brought-${p}`).value)||0;
+    $(`available-${p}`).value=existing+brought;
+  });
+}
+
+function getFormData(){
+  const data=emptyData();
+  PRICES.forEach(p=>{
+    data[p]={
+      existing:Number($(`existing-${p}`).value)||0,
+      brought:Number($(`brought-${p}`).value)||0,
+      removed:Number($(`removed-${p}`).value)||0,
+      sold:Number($(`sold-${p}`).value)||0,
+      manualSold:$(`sold-${p}`).dataset.manual==="true"
+    };
+  });
+  return data;
+}
+
+function displayData(data){
+  const safe=data||emptyData();
+  PRICES.forEach(p=>{
+    const r=safe[p]||{};
+    $(`existing-${p}`).value=Number(r.existing)||0;
+    $(`brought-${p}`).value=Number(r.brought)||0;
+    $(`removed-${p}`).value=Number(r.removed)||0;
+    $(`sold-${p}`).value=Number(r.sold)||0;
+    $(`sold-${p}`).dataset.manual=r.manualSold===true?"true":"false";
+  });
+  updateAvailable();
+  calculate(false);
+
+  // Affiche immédiatement le calcul de la veille si un reste est saisi.
+  previewPreviousDay();
+}
+
+function calculate(show=true){
+  const data=getFormData();
+  let existing=0,available=0,sold=0,gross=0;
+  PRICES.forEach(p=>{
+    const r=data[p];
+    existing+=r.existing;
+    available+=r.existing+r.brought;
+    sold+=r.sold;
+    gross+=r.sold*p;
+  });
+  const commission=gross*COMMISSION_RATE;
+  const net=gross-commission;
+
+  $("totalExisting").textContent=existing;
+  $("totalAvailable").textContent=available;
+  $("totalSold").textContent=sold;
+  $("gross").textContent=money(gross);
+  $("gross2").textContent=money(gross);
+  $("commission").textContent=money(commission);
+  $("net").textContent=money(net);
+
+  if(show){
+    $("message").textContent="✅ Calcul effectué.";
+    $("message").style.color="#23733b";
+  }
+  return data;
+}
+
+/* ==========================================================
+   SUPABASE
+   ========================================================== */
+async function remoteDay(date){
+  if(!navigator.onLine)return null;
+  try{
+    const {data,error}=await supabaseClient
+      .from("comptabilite_jours")
+      .select("jour,donnees,updated_at")
+      .eq("jour",date)
+      .maybeSingle();
+    if(error)throw error;
+    return data||null;
+  }catch(e){
+    console.error("Lecture Supabase:",e);
+    return null;
+  }
+}
+
+async function upsertDay(date,data){
+  const {error}=await supabaseClient
+    .from("comptabilite_jours")
+    .upsert({
+      jour:date,
+      donnees:data,
+      updated_at:new Date().toISOString()
+    },{onConflict:"jour"});
+  if(error)throw error;
+}
+
+/* ==========================================================
+   CHARGEMENT D'UNE JOURNÉE
+   ========================================================== */
+async function loadDay(){
+  currentDate=$("date").value;
+  if(!currentDate)return;
+
+  $("message").textContent="Chargement…";
+  setStatus("☁️ Recherche des données…","wait");
+
+  const local=getLocal(currentDate);
+  const remote=await remoteDay(currentDate);
+
+  if(remote && remote.donnees){
+    displayData(remote.donnees);
+    saveLocal(currentDate,remote.donnees,false);
+    $("message").textContent="☁️ Journée chargée depuis Supabase.";
+    setStatus("✓ Synchronisé","ok");
+  }else if(local && local.data){
+    displayData(local.data);
+    $("message").textContent=local.pending
+      ?"📱 Copie locale chargée — synchronisation en attente."
+      :"📱 Copie locale chargée.";
+    setStatus(local.pending?"📱 En attente de synchronisation":"✓ Synchronisé",local.pending?"wait":"ok");
+
+    if(navigator.onLine && local.pending){
+      try{
+        await upsertDay(currentDate,local.data);
+        markLocalSynced(currentDate);
+      }catch(e){console.error(e)}
+    }
+  }else{
+    displayData(emptyData());
+    $("message").textContent="Nouvelle journée.";
+    setStatus(navigator.onLine?"✓ Connecté":"📱 Hors ligne",navigator.onLine?"ok":"wait");
+  }
+
+  await updateWeek(currentDate);
+  await refreshDashboard();
+  await loadWeekHistory();
+  subscribeRealtime();
+}
+
+/* ==========================================================
+   ⭐ CALCUL AUTOMATIQUE DE LA VEILLE
+   ========================================================== */
+async function calculatePreviousDay(nextDate,nextMorningData){
+  const previousDate=previousDateISO(nextDate);
+
+  /*
+    IMPORTANT :
+    On cherche d'abord la journée précédente sur Supabase,
+    puis dans le téléphone.
+    Le but est que le calcul de mardi soit possible même si
+    mercredi vient juste d'être saisi.
+  */
+  let previousData=null;
+  let source="";
+
+  if(navigator.onLine){
+    const remote=await remoteDay(previousDate);
+    if(remote && remote.donnees){
+      previousData=remote.donnees;
+      source="Supabase";
+    }
+  }
+
+  if(!previousData){
+    const local=getLocal(previousDate);
+    if(local && local.data){
+      previousData=local.data;
+      source="téléphone";
+    }
+  }
+
+  /*
+    Si mardi n'existe nulle part, on ne peut mathématiquement
+    pas calculer les ventes de mardi. On renvoie une information
+    claire au lieu de faire semblant que tout va bien.
+  */
+  if(!previousData){
+    return {
+      changed:false,
+      previousDate,
+      reason:"missing"
+    };
+  }
+
+  let changed=false;
+
+  PRICES.forEach(price=>{
+    const old={
+      existing:Number(previousData?.[price]?.existing)||0,
+      brought:Number(previousData?.[price]?.brought)||0,
+      removed:Number(previousData?.[price]?.removed)||0,
+      sold:Number(previousData?.[price]?.sold)||0,
+      manualSold:previousData?.[price]?.manualSold===true
+    };
+
+    /*
+      Le mercredi matin :
+      nextMorningData[price].existing = ce qui reste de mardi.
+    */
+    const remainingThisMorning=
+      Number(nextMorningData?.[price]?.existing)||0;
+
+    /*
+      FORMULE EXACTE :
+
+      stock disponible mardi
+      - retirés/perdus mardi
+      - reste constaté mercredi matin
+      = vendu mardi
+    */
+    const available=old.existing+old.brought;
+    const calculated=Math.max(
+      0,
+      available-old.removed-remainingThisMorning
+    );
+
+    /*
+      Si l'utilisateur a déjà tapé une vente manuellement,
+      on ne l'écrase pas.
+    */
+    if(old.manualSold) return;
+
+    if(old.sold !== calculated){
+      previousData[price]={
+        ...old,
+        sold:calculated,
+        manualSold:false
+      };
+      changed=true;
+    }
+  });
+
+  /*
+    Même si le nombre de ventes est déjà identique,
+    on garde les données disponibles pour pouvoir recalculer
+    le CA et actualiser l'écran.
+  */
+  if(changed){
+    saveLocal(previousDate,previousData,true);
+
+    if(navigator.onLine){
+      try{
+        await upsertDay(previousDate,previousData);
+        markLocalSynced(previousDate);
+      }catch(error){
+        console.error("ERREUR SAUVEGARDE VEILLE :",error);
+        return {
+          changed:true,
+          previousDate,
+          data:previousData,
+          pending:true,
+          source
+        };
+      }
+    }
+  }
+
+  return {
+    changed,
+    previousDate,
+    data:previousData,
+    pending:false,
+    source
+  };
+}
+
+/* ==========================================================
+   ⭐ ENREGISTREMENT PRINCIPAL
+   ========================================================== */
+
+/* ==========================================================
+   CALCUL DIRECT DE LA VEILLE
+   ==========================================================
+
+   Dès que l'utilisateur renseigne "Reste veille", on prend
+   les chiffres de la journée précédente et on calcule
+   immédiatement les ventes et le CA de cette journée.
+*/
+let previewTimer=null;
+
+async function previewPreviousDay(){
+  clearTimeout(previewTimer);
+
+  previewTimer=setTimeout(async()=>{
+    const nextDate=$("date").value;
+    if(!nextDate)return;
+
+    const nextData=getFormData();
+
+    // Il faut qu'au moins une quantité de "Reste veille" soit saisie.
+    const hasRemaining=PRICES.some(p=>
+      Number(nextData[p]?.existing)||0
+    );
+
+    if(!hasRemaining){
+      $("previousDayResult").style.display="none";
+      return;
+    }
+
+    const previousDate=previousDateISO(nextDate);
+
+    $("previousDayResult").style.display="block";
+    $("previousDayTitle").textContent=
+      `⏳ Calcul de ${dateLocale(previousDate)}…`;
+    $("previousDayDetails").textContent=
+      "Je récupère les stocks de la veille et je calcule les ventes.";
+
+    try{
+      let previousData=null;
+
+      // 1. Chercher la veille sur Supabase.
+      if(navigator.onLine){
+        const remote=await remoteDay(previousDate);
+        if(remote?.donnees){
+          previousData=remote.donnees;
+        }
+      }
+
+      // 2. Sinon chercher la copie du téléphone.
+      if(!previousData){
+        const local=getLocal(previousDate);
+        if(local?.data){
+          previousData=local.data;
+        }
+      }
+
+      if(!previousData){
+        $("previousDayTitle").textContent=
+          `⚠️ Impossible de calculer ${dateLocale(previousDate)}`;
+        $("previousDayDetails").textContent=
+          `Les données de ${dateLocale(previousDate)} ne sont pas enregistrées sur ce téléphone ou dans Supabase.`;
+        return;
+      }
+
+      let sold=0;
+      let gross=0;
+
+      PRICES.forEach(price=>{
+        const old=previousData[price]||{};
+
+        const disponible=
+          (Number(old.existing)||0)+
+          (Number(old.brought)||0);
+
+        const retires=
+          Number(old.removed)||0;
+
+        const resteMatin=
+          Number(nextData[price]?.existing)||0;
+
+        // FORMULE :
+        // ce qui était disponible hier
+        // - retirés/perdus hier
+        // - ce qui reste ce matin
+        const q=Math.max(
+          0,
+          disponible-retires-resteMatin
+        );
+
+        // Ne pas remplacer une vente saisie manuellement.
+        const finalQ=old.manualSold===true
+          ? (Number(old.sold)||0)
+          : q;
+
+        sold+=finalQ;
+        gross+=finalQ*price;
+      });
+
+      const commission=gross*COMMISSION_RATE;
+      const net=gross-commission;
+
+      $("previousDayTitle").textContent=
+        `✅ ${dateLocale(previousDate)} : ${sold} gâteau(x) vendu(s)`;
+
+      $("previousDayDetails").innerHTML=
+        `<strong style="font-size:20px">${money(gross)}</strong> de CA brut`+
+        ` · ${money(commission)} de commission Lindo`+
+        ` · <strong>${money(net)}</strong> net`;
+
+      /*
+        IMPORTANT :
+        On ne sauvegarde pas encore ici.
+        On affiche le calcul immédiatement.
+        Le bouton "Enregistrer / calculer" enregistrera
+        ensuite le résultat.
+      */
+
+    }catch(error){
+      console.error("Preview veille:",error);
+      $("previousDayTitle").textContent=
+        "⚠️ Erreur pendant le calcul de la veille";
+      $("previousDayDetails").textContent=
+        "Regarde la connexion Internet puis réessaie.";
+    }
+  },250);
+}
+
+async function savePreviousDayFromCurrent(){
+  const nextDate=$("date").value;
+  const nextData=getFormData();
+  const previousDate=previousDateISO(nextDate);
+
+  let previousData=null;
+
+  if(navigator.onLine){
+    const remote=await remoteDay(previousDate);
+    if(remote?.donnees)previousData=remote.donnees;
+  }
+
+  if(!previousData){
+    const local=getLocal(previousDate);
+    if(local?.data)previousData=local.data;
+  }
+
+  if(!previousData){
+    return {ok:false,reason:"missing",previousDate};
+  }
+
+  let changed=false;
+
+  PRICES.forEach(price=>{
+    const old=previousData[price]||{
+      existing:0,brought:0,removed:0,sold:0,manualSold:false
+    };
+
+    if(old.manualSold===true)return;
+
+    const disponible=
+      (Number(old.existing)||0)+
+      (Number(old.brought)||0);
+
+    const retires=
+      Number(old.removed)||0;
+
+    const resteMatin=
+      Number(nextData[price]?.existing)||0;
+
+    const vendu=Math.max(
+      0,
+      disponible-retires-resteMatin
+    );
+
+    if((Number(old.sold)||0)!==vendu){
+      previousData[price]={
+        ...old,
+        sold:vendu,
+        manualSold:false
+      };
+      changed=true;
+    }
+  });
+
+  // Sauvegarde même si aucune quantité n'a changé :
+  // cela garantit que la donnée existe aussi en local.
+  saveLocal(previousDate,previousData,true);
+
+  if(navigator.onLine){
+    await upsertDay(previousDate,previousData);
+    markLocalSynced(previousDate);
+  }
+
+  return {
+    ok:true,
+    changed,
+    previousDate,
+    data:previousData
+  };
+}
+
+async function saveCurrentDay(){
+  const date=$("date").value;
+
+  if(!date){
+    $("message").textContent="⚠️ Sélectionne une date.";
+    $("message").style.color="#a52b2b";
+    return;
+  }
+
+  currentDate=date;
+
+  /*
+    Les données de la journée actuellement affichée.
+    La colonne "Reste veille" correspond à existing.
+  */
+  const data=getFormData();
+
+  // Sauvegarde locale immédiate.
+  saveLocal(date,data,true);
+  calculate(false);
+
+  setStatus("💾 Enregistrement…","wait");
+
+  try{
+
+    /*
+      ======================================================
+      1. ENREGISTRER LA JOURNÉE ACTUELLE
+      ======================================================
+    */
+    if(navigator.onLine){
+      await upsertDay(date,data);
+      markLocalSynced(date);
+    }
+
+    /*
+      ======================================================
+      2. CALCULER ET ENREGISTRER EXPLICITEMENT LA VEILLE
+      ======================================================
+    */
+    const result=await savePreviousDayFromCurrent();
+
+    if(result.reason==="missing"){
+
+      $("message").innerHTML=
+        `⚠️ ${dateLocale(result.previousDate)} n'a pas été trouvée dans les données enregistrées. `+
+        `La journée actuelle est bien enregistrée, mais il est impossible de calculer les ventes de la veille sans les chiffres de ${dateLocale(result.previousDate)}.`;
+
+      $("message").style.color="#a52b2b";
+
+    }else{
+
+      const totals=getTotals(result.data);
+
+      $("message").innerHTML=
+        `✅ <strong>${dateLocale(result.previousDate)}</strong> calculé : `+
+        `<strong>${totals.sold} gâteau(x) vendu(s)</strong> — `+
+        `<strong>${money(totals.gross)}</strong> de CA.`;
+
+      $("message").style.color="#23733b";
+    }
+
+    /*
+      ======================================================
+      3. RAFRAÎCHIR TOUT
+      ======================================================
+    */
+    await updateWeek(date);
+    await refreshDashboard();
+    await loadWeekHistory();
+
+    setStatus(
+      navigator.onLine ? "✓ Synchronisé" : "📱 Enregistré sur le téléphone",
+      navigator.onLine ? "ok" : "wait"
+    );
+
+  }catch(error){
+
+    console.error("ERREUR ENREGISTREMENT :",error);
+
+    $("message").textContent=
+      "⚠️ Une erreur est survenue pendant l'enregistrement. Les données sont conservées sur le téléphone.";
+
+    $("message").style.color="#a52b2b";
+    setStatus("⚠️ En attente de synchronisation","wait");
+  }
+}
+
+/* ==========================================================
+   SAUVEGARDE AUTOMATIQUE APRÈS UNE SAISIE
+   ========================================================== */
+function scheduleSave(){
+  clearTimeout(saveTimer);
+
+  const date=$("date").value;
+  if(!date)return;
+
+  const data=getFormData();
+
+  // Sauvegarde locale immédiate.
+  saveLocal(date,data,true);
+  setStatus("💾 Enregistrement local…","wait");
+
+  saveTimer=setTimeout(async()=>{
+    if(!navigator.onLine)return;
+
+    try{
+      /*
+        L'auto-save enregistre seulement la journée actuelle.
+        Le calcul de la veille est déclenché par le bouton
+        "Enregistrer / calculer", afin d'éviter une course
+        entre plusieurs sauvegardes.
+      */
+      await upsertDay(date,data);
+      markLocalSynced(date);
+      setStatus("✓ Sauvegarde automatique","ok");
+    }catch(error){
+      console.error("Auto-save:",error);
+      setStatus("⚠️ En attente de connexion","wait");
+    }
+  },700);
+}
+
+/* ==========================================================
+   TOTAUX
+   ========================================================== */
+function getTotals(data){
+  let sold=0,gross=0;
+  PRICES.forEach(p=>{
+    const q=Number(data?.[p]?.sold)||0;
+    sold+=q;
+    gross+=q*p;
+  });
+  const commission=gross*COMMISSION_RATE;
+  return {sold,gross,commission,net:gross-commission};
+}
+
+/* ==========================================================
+   SEMAINE VENDREDI → JEUDI
+   ========================================================== */
+function getWeekBounds(date){
+  const d=new Date(date+"T12:00:00");
+  const diff=(d.getDay()-5+7)%7;
+  d.setDate(d.getDate()-diff);
+  const start=dateISO(d);
+  const endDate=new Date(d);endDate.setDate(endDate.getDate()+6);
+  return {start,end:dateISO(endDate)};
+}
+
+function formatShortDate(date){
+  return new Date(date+"T12:00:00").toLocaleDateString("fr-FR",{weekday:"short",day:"2-digit",month:"2-digit"});
+}
+
+async function getWeekData(start,end){
+  const map={};
+
+  if(navigator.onLine){
+    try{
+      const {data,error}=await supabaseClient
+        .from("comptabilite_jours")
+        .select("jour,donnees")
+        .gte("jour",start)
+        .lte("jour",end);
+
+      if(!error && data){
+        data.forEach(r=>map[r.jour]=r.donnees||{});
+      }
+    }catch(e){console.error("Semaine Supabase:",e)}
+  }
+
+  const s=new Date(start+"T12:00:00");
+  for(let i=0;i<7;i++){
+    const d=new Date(s);d.setDate(d.getDate()+i);
+    const iso=dateISO(d);
+    const local=getLocal(iso);
+    if(local && local.data && (local.pending || !map[iso])){
+      map[iso]=local.data;
+    }
+  }
+
+  return map;
+}
+
+async function updateWeek(date){
+  const bounds=getWeekBounds(date);
+  $("weekRange").textContent=
+    `Du ${new Date(bounds.start+"T12:00:00").toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long"})} au ${new Date(bounds.end+"T12:00:00").toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}`;
+
+  $("weekRows").innerHTML="";
+  $("weekFooter").innerHTML="";
+
+  const map=await getWeekData(bounds.start,bounds.end);
+  let sold=0,gross=0,commission=0,net=0;
+
+  const start=new Date(bounds.start+"T12:00:00");
+
+  for(let i=0;i<7;i++){
+    const d=new Date(start);d.setDate(d.getDate()+i);
+    const iso=dateISO(d);
+    const t=getTotals(map[iso]);
+
+    sold+=t.sold;gross+=t.gross;commission+=t.commission;net+=t.net;
+
+    const tr=document.createElement("tr");
+    tr.innerHTML=`
+      <td>${formatShortDate(iso)}</td>
+      <td>${t.sold}</td>
+      <td>${money(t.gross)}</td>
+      <td>${money(t.commission)}</td>
+      <td>${money(t.net)}</td>`;
+    $("weekRows").appendChild(tr);
+  }
+
+  $("weekFooter").innerHTML=`
+    <tr class="week-total">
+      <td>TOTAL SEMAINE</td><td>${sold}</td><td>${money(gross)}</td>
+      <td>${money(commission)}</td><td>${money(net)}</td>
+    </tr>`;
+
+  $("weekGross").textContent=money(gross);
+  $("weekCommission").textContent=money(commission);
+  $("weekNet").textContent=money(net);
+  $("weekSold").textContent=sold;
+  $("weekMessage").textContent="La semaine Lindo est calculée automatiquement du vendredi au jeudi.";
+}
+
+/* ==========================================================
+   TABLEAU DE BORD
+   ========================================================== */
+async function refreshDashboard(){
+  const selected=$("date").value||dateISO(new Date());
+  const bounds=getWeekBounds(selected);
+  const map=await getWeekData(bounds.start,bounds.end);
+
+  let gross=0,sold=0;
+  const daily=[];
+  const products={};
+  PRICES.forEach(p=>products[p]=0);
+
+  const start=new Date(bounds.start+"T12:00:00");
+
+  for(let i=0;i<7;i++){
+    const d=new Date(start);d.setDate(d.getDate()+i);
+    const iso=dateISO(d);
+    const t=getTotals(map[iso]);
+    gross+=t.gross;sold+=t.sold;daily.push(t.gross);
+
+    PRICES.forEach(p=>{
+      products[p]+=Number(map[iso]?.[p]?.sold)||0;
+    });
+  }
+
+  const commission=gross*COMMISSION_RATE;
+  const net=gross-commission;
+
+  $("dashGross").textContent=money(gross);
+  $("dashCommission").textContent=money(commission);
+  $("dashNet").textContent=money(net);
+  $("dashSold").textContent=sold.toLocaleString("fr-FR");
+
+  const end=new Date(start);end.setDate(end.getDate()+6);
+  $("dashboardWeekLabel").textContent=
+    "Semaine Lindo — "+start.toLocaleDateString("fr-FR")+" → "+end.toLocaleDateString("fr-FR");
+
+  const max=Math.max(...daily,1);
+  $("weekBars").innerHTML=daily.map((v,i)=>`
+    <div class="day-bar">
+      <div class="amount">${Math.round(v).toLocaleString("fr-FR")} RD$</div>
+      <div class="bar" style="height:${Math.max(3,Math.round(v/max*130))}px"></div>
+      <div class="day">${DAYS[i].slice(0,3)}</div>
+    </div>`).join("");
+
+  const tops=Object.entries(products)
+    .sort((a,b)=>b[1]-a[1])
+    .filter(x=>x[1]>0)
+    .slice(0,5);
+
+  $("topProducts").innerHTML=tops.length
+    ?tops.map((x,i)=>`
+      <div class="top-product">
+        <b>${i+1}.</b><span>Produit ${x[0]} RD$</span><strong>${x[1]}</strong>
+      </div>`).join("")
+    :'<div class="muted">Les ventes apparaîtront ici.</div>';
+
+  const goal=Number($("weeklyGoal").value)||35000;
+  const pct=goal>0?Math.min(100,gross/goal*100):0;
+  $("goalProgress").style.width=pct.toFixed(1)+"%";
+  $("goalText").textContent=
+    `${money(gross)} / ${money(goal)} — ${Math.round(pct)} %`;
+}
+
+/* ==========================================================
+   HISTORIQUE
+   ========================================================== */
+async function loadWeekHistory(){
+  const body=$("historyBody");
+  body.innerHTML='<tr><td colspan="5" class="muted">Chargement de l’historique…</td></tr>';
+
+  if(!navigator.onLine){
+    body.innerHTML='<tr><td colspan="5" class="muted">📱 Historique disponible lorsque Internet revient.</td></tr>';
+    return;
+  }
+
+  try{
+    const {data,error}=await supabaseClient
+      .from("comptabilite_jours")
+      .select("jour,donnees")
+      .order("jour",{ascending:true});
+
+    if(error)throw error;
+
+    const weeks={};
+
+    (data||[]).forEach(row=>{
+      const start=getWeekBounds(row.jour).start;
+      if(!weeks[start])weeks[start]={sold:0,gross:0,commission:0,net:0};
+      const t=getTotals(row.donnees||{});
+      weeks[start].sold+=t.sold;
+      weeks[start].gross+=t.gross;
+      weeks[start].commission+=t.commission;
+      weeks[start].net+=t.net;
+    });
+
+    const entries=Object.entries(weeks).sort((a,b)=>b[0].localeCompare(a[0]));
+
+    if(!entries.length){
+      body.innerHTML='<tr><td colspan="5" class="muted">Aucune semaine enregistrée pour le moment.</td></tr>';
+      return;
+    }
+
+    body.innerHTML=entries.map(([start,t])=>{
+      const s=new Date(start+"T12:00:00");
+      const e=new Date(s);e.setDate(e.getDate()+6);
+      const label=
+        s.toLocaleDateString("fr-FR",{day:"2-digit",month:"2-digit",year:"numeric"})+
+        " → "+
+        e.toLocaleDateString("fr-FR",{day:"2-digit",month:"2-digit",year:"numeric"});
+
+      return `<tr>
+        <td><strong>${label}</strong></td>
+        <td>${t.sold}</td>
+        <td>${money(t.gross)}</td>
+        <td>${money(t.commission)}</td>
+        <td><strong>${money(t.net)}</strong></td>
+      </tr>`;
+    }).join("");
+
+  }catch(e){
+    console.error("Historique:",e);
+    body.innerHTML='<tr><td colspan="5">⚠️ Impossible de charger l’historique.</td></tr>';
+  }
+}
+
+/* ==========================================================
+   SYNCHRONISATION HORS LIGNE
+   ========================================================== */
+async function syncCurrentLocal(){
+  if(!navigator.onLine)return;
+
+  const local=getLocal(currentDate);
+  if(local && local.data && local.pending){
+    try{
+      await upsertDay(currentDate,local.data);
+      markLocalSynced(currentDate);
+      await calculatePreviousDay(currentDate,local.data);
+    }catch(e){console.error("Sync:",e)}
+  }
+
+  await loadDay();
+}
+
+/* ==========================================================
+   TEMPS RÉEL
+   ========================================================== */
+function subscribeRealtime(){
+  if(realtimeChannel){
+    supabaseClient.removeChannel(realtimeChannel);
+  }
+
+  realtimeChannel=supabaseClient
+    .channel("comptabilite-temps-reel")
+    .on(
+      "postgres_changes",
+      {event:"*",schema:"public",table:"comptabilite_jours"},
+      async payload=>{
+        const changedDate=payload.new?.jour||payload.old?.jour;
+        if(!changedDate)return;
+
+        // Si l'autre appareil modifie la journée actuellement affichée.
+        if(changedDate===currentDate && payload.new?.donnees){
+          displayData(payload.new.donnees);
+          saveLocal(currentDate,payload.new.donnees,false);
+          setStatus("✓ Mis à jour depuis l'autre appareil","ok");
+        }
+
+        // ⭐ Toujours rafraîchir semaine + dashboard.
+        await updateWeek(currentDate);
+        await refreshDashboard();
+        await loadWeekHistory();
+      }
+    )
+    .subscribe();
+}
+
+/* ==========================================================
+   ÉVÉNEMENTS
+   ========================================================== */
+$("loadButton").addEventListener("click",loadDay);
+$("saveButton").addEventListener("click",saveCurrentDay);
+
+$("weeklyGoal").addEventListener("input",refreshDashboard);
+
+$("date").addEventListener("change",async()=>{
+  clearTimeout(saveTimer);
+
+  const newDate=$("date").value;
+  if(!newDate)return;
+
+  // Sauvegarder immédiatement les données locales du jour quitté.
+  if(currentDate && currentDate!==newDate){
+    const oldLocal=getLocal(currentDate);
+    if(oldLocal && oldLocal.data && oldLocal.pending && navigator.onLine){
+      try{
+        await upsertDay(currentDate,oldLocal.data);
+        markLocalSynced(currentDate);
+      }catch(e){console.error(e)}
+    }
+  }
+
+  currentDate=newDate;
+  await loadDay();
+});
+
+window.addEventListener("online",async()=>{
+  setStatus("🌐 Internet revenu — synchronisation…","wait");
+  await syncCurrentLocal();
+});
+
+window.addEventListener("offline",()=>{
+  setStatus("📱 Hors ligne — données conservées","wait");
+});
+
+/* ==========================================================
+   INITIALISATION
+   ========================================================== */
+(async function init(){
+  buildInputs();
+
+  $("date").value=dateISO(new Date());
+  currentDate=$("date").value;
+
+  try{
+    const {error}=await supabaseClient
+      .from("comptabilite_jours")
+      .select("jour")
+      .limit(1);
+
+    if(error)throw error;
+    setStatus("✓ Connecté à Supabase","ok");
+  }catch(e){
+    console.error("Connexion Supabase:",e);
+    setStatus(navigator.onLine?"⚠️ Vérification Supabase":"📱 Hors ligne","wait");
+  }
+
+  await loadDay();
+})();
+</script>
+</body>
+</html>
