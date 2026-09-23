@@ -195,6 +195,10 @@ let currentDate = "";
 let saveTimer = null;
 let realtimeChannel = null;
 let loadToken = 0;
+let formDate = "";
+let formDirty = false;
+let existingTouched = false;
+let saveSequence = 0;
 
 /* ==========================================================
    OUTILS
@@ -278,6 +282,8 @@ function buildInputs(){
 
   document.querySelectorAll("#prices input").forEach(input=>{
     input.addEventListener("input",()=>{
+      formDirty=true;
+      if(input.id.startsWith("existing-")) existingTouched=true;
       if(input.id.startsWith("sold-")) input.dataset.manual="true";
       updateAvailable();
       calculate(false);
@@ -326,6 +332,9 @@ function displayData(data){
   updateAvailable();
   calculate(false);
 
+  formDate=currentDate;
+  formDirty=false;
+  existingTouched=PRICES.some(p=>Number(safe[p]?.existing)||0);
   // Affiche immédiatement le calcul de la veille si un reste est saisi.
   previewPreviousDay();
 }
@@ -392,44 +401,58 @@ async function upsertDay(date,data){
    CHARGEMENT D'UNE JOURNÉE
    ========================================================== */
 async function loadDay(){
-  const myToken=++loadToken;
-  currentDate=$("date").value;
-  if(!currentDate)return;
+  const date=$("date").value;
+  if(!date)return;
 
+  const myToken=++loadToken;
+  currentDate=date;
   $("message").textContent="Chargement…";
   setStatus("☁️ Recherche des données…","wait");
 
-  const local=getLocal(currentDate);
-  const remote=await remoteDay(currentDate);
-  if(myToken!==loadToken || currentDate!==$("date").value) return;
-
-  if(remote && remote.donnees){
-    displayData(remote.donnees);
-    saveLocal(currentDate,remote.donnees,false);
-    $("message").textContent="☁️ Journée chargée depuis Supabase.";
-    setStatus("✓ Synchronisé","ok");
-  }else if(local && local.data){
+  // Une copie locale en attente est TOUJOURS prioritaire :
+  // elle contient les dernières saisies faites sur cet appareil.
+  const local=getLocal(date);
+  if(local?.data && local.pending){
     displayData(local.data);
-    $("message").textContent=local.pending
-      ?"📱 Copie locale chargée — synchronisation en attente."
-      :"📱 Copie locale chargée.";
-    setStatus(local.pending?"📱 En attente de synchronisation":"✓ Synchronisé",local.pending?"wait":"ok");
+    $("message").textContent="📱 Dernières saisies chargées — synchronisation en attente.";
+    setStatus("📱 En attente de synchronisation", "wait");
 
-    if(navigator.onLine && local.pending){
+    if(navigator.onLine){
       try{
-        await upsertDay(currentDate,local.data);
-        markLocalSynced(currentDate);
-      }catch(e){console.error(e)}
+        await upsertDay(date,local.data);
+        if(myToken!==loadToken || $("date").value!==date)return;
+        markLocalSynced(date);
+        $("message").textContent="☁️ Journée synchronisée.";
+        setStatus("✓ Synchronisé","ok");
+      }catch(e){console.error("Synchronisation locale:",e)}
     }
   }else{
-    displayData(emptyData());
-    $("message").textContent="Nouvelle journée.";
-    setStatus(navigator.onLine?"✓ Connecté":"📱 Hors ligne",navigator.onLine?"ok":"wait");
+    const remote=await remoteDay(date);
+    if(myToken!==loadToken || $("date").value!==date)return;
+
+    if(remote?.donnees){
+      displayData(remote.donnees);
+      saveLocal(date,remote.donnees,false);
+      $("message").textContent="☁️ Journée chargée depuis Supabase.";
+      setStatus("✓ Synchronisé","ok");
+    }else if(local?.data){
+      displayData(local.data);
+      $("message").textContent="📱 Copie locale chargée.";
+      setStatus("✓ Synchronisé","ok");
+    }else{
+      displayData(emptyData());
+      $("message").textContent="Nouvelle journée.";
+      setStatus(navigator.onLine?"✓ Connecté":"📱 Hors ligne",navigator.onLine?"ok":"wait");
+    }
   }
 
-  await updateWeek(currentDate);
+  if(myToken!==loadToken || $("date").value!==date)return;
+  await updateWeek(date);
+  if(myToken!==loadToken || $("date").value!==date)return;
   await refreshDashboard();
+  if(myToken!==loadToken || $("date").value!==date)return;
   await loadWeekHistory();
+  if(myToken!==loadToken || $("date").value!==date)return;
   subscribeRealtime();
 }
 
@@ -449,20 +472,23 @@ async function calculatePreviousDay(nextDate,nextMorningData){
   let previousData=null;
   let source="";
 
-  if(navigator.onLine){
+  const localPrevious=getLocal(previousDate);
+  if(localPrevious?.data && localPrevious.pending){
+    previousData=localPrevious.data;
+    source="téléphone (en attente)";
+  }
+
+  if(!previousData && navigator.onLine){
     const remote=await remoteDay(previousDate);
-    if(remote && remote.donnees){
+    if(remote?.donnees){
       previousData=remote.donnees;
       source="Supabase";
     }
   }
 
-  if(!previousData){
-    const local=getLocal(previousDate);
-    if(local && local.data){
-      previousData=local.data;
-      source="téléphone";
-    }
+  if(!previousData && localPrevious?.data){
+    previousData=localPrevious.data;
+    source="téléphone";
   }
 
   /*
@@ -583,12 +609,12 @@ async function previewPreviousDay(){
 
     const nextData=getFormData();
 
-    // Il faut qu'au moins une quantité de "Reste veille" soit saisie.
-    const hasRemaining=PRICES.some(p=>
-      Number(nextData[p]?.existing)||0
-    );
+    // Zéro reste est aussi une saisie valide : tout peut avoir été vendu.
+    // L’aperçu ne se lance que si une valeur de "Reste veille" existe
+    // ou si l'utilisateur a réellement touché cette colonne.
+    const hasRemaining=PRICES.some(p=>Number(nextData[p]?.existing)||0);
 
-    if(!hasRemaining){
+    if(!hasRemaining && !existingTouched){
       $("previousDayResult").style.display="none";
       return;
     }
@@ -604,19 +630,22 @@ async function previewPreviousDay(){
     try{
       let previousData=null;
 
-      // Priorité à la copie locale en attente, qui peut être plus récente.
-      const local=getLocal(previousDate);
-      if(local?.data && local.pending){
-        previousData=local.data;
+      // La copie locale en attente est prioritaire pour ne jamais
+      // remplacer une saisie récente par une ancienne version distante.
+      const localPrevious=getLocal(previousDate);
+      if(localPrevious?.data && localPrevious.pending){
+        previousData=localPrevious.data;
       }
 
       if(!previousData && navigator.onLine){
         const remote=await remoteDay(previousDate);
-        if(remote?.donnees) previousData=remote.donnees;
+        if(remote?.donnees){
+          previousData=remote.donnees;
+        }
       }
 
-      if(!previousData && local?.data){
-        previousData=local.data;
+      if(!previousData && localPrevious?.data){
+        previousData=localPrevious.data;
       }
 
       if(!previousData){
@@ -696,21 +725,19 @@ async function savePreviousDayFromCurrent(){
   const previousDate=previousDateISO(nextDate);
 
   let previousData=null;
+  const localPrevious=getLocal(previousDate);
 
-  // PRIORITÉ À LA COPIE LOCALE EN ATTENTE : elle peut être plus récente
-  // que Supabase pendant les quelques secondes suivant une saisie.
-  const local=getLocal(previousDate);
-  if(local?.data && local.pending){
-    previousData=local.data;
+  if(localPrevious?.data && localPrevious.pending){
+    previousData=localPrevious.data;
   }
 
   if(!previousData && navigator.onLine){
     const remote=await remoteDay(previousDate);
-    if(remote?.donnees) previousData=remote.donnees;
+    if(remote?.donnees)previousData=remote.donnees;
   }
 
-  if(!previousData && local?.data){
-    previousData=local.data;
+  if(!previousData && localPrevious?.data){
+    previousData=localPrevious.data;
   }
 
   if(!previousData){
@@ -769,8 +796,12 @@ async function savePreviousDayFromCurrent(){
 }
 
 async function saveCurrentDay(){
+  const mySave=++saveSequence;
   clearTimeout(saveTimer);
   saveTimer=null;
+  clearTimeout(previewTimer);
+  previewTimer=null;
+
   const date=$("date").value;
 
   if(!date){
@@ -803,6 +834,10 @@ async function saveCurrentDay(){
     if(navigator.onLine){
       await upsertDay(date,data);
       markLocalSynced(date);
+      if($("date").value===date){
+        formDate=date;
+        formDirty=false;
+      }
     }
 
     /*
@@ -831,6 +866,8 @@ async function saveCurrentDay(){
 
       $("message").style.color="#23733b";
     }
+
+    if(mySave!==saveSequence || $("date").value!==date) return;
 
     /*
       ======================================================
@@ -1160,9 +1197,13 @@ function subscribeRealtime(){
 
         // Si l'autre appareil modifie la journée actuellement affichée.
         if(changedDate===currentDate && payload.new?.donnees){
-          displayData(payload.new.donnees);
-          saveLocal(currentDate,payload.new.donnees,false);
-          setStatus("✓ Mis à jour depuis l'autre appareil","ok");
+          const local=getLocal(currentDate);
+          // Ne jamais écraser des saisies locales encore en attente.
+          if(!local?.pending){
+            displayData(payload.new.donnees);
+            saveLocal(currentDate,payload.new.donnees,false);
+            setStatus("✓ Mis à jour depuis l'autre appareil","ok");
+          }
         }
 
         // ⭐ Toujours rafraîchir semaine + dashboard.
@@ -1184,22 +1225,35 @@ $("weeklyGoal").addEventListener("input",refreshDashboard);
 
 $("date").addEventListener("change",async()=>{
   clearTimeout(saveTimer);
+  saveTimer=null;
+  clearTimeout(previewTimer);
+  previewTimer=null;
+  ++saveSequence;
 
   const newDate=$("date").value;
   if(!newDate)return;
 
-  // Sauvegarder immédiatement les données locales du jour quitté.
-  if(currentDate && currentDate!==newDate){
-    const oldLocal=getLocal(currentDate);
-    if(oldLocal && oldLocal.data && oldLocal.pending && navigator.onLine){
+  const oldDate=currentDate;
+
+  // Ne jamais recopier un formulaire qui appartient à un autre jour.
+  // Cela évite qu'un chargement asynchrone fasse disparaître une journée.
+  if(oldDate && oldDate!==newDate && formDate===oldDate && formDirty){
+    const oldData=getFormData();
+    saveLocal(oldDate,oldData,true);
+    if(navigator.onLine){
       try{
-        await upsertDay(currentDate,oldLocal.data);
-        markLocalSynced(currentDate);
-      }catch(e){console.error(e)}
+        await upsertDay(oldDate,oldData);
+        markLocalSynced(oldDate);
+      }catch(e){
+        console.error("Sauvegarde du jour quitté:",e);
+      }
     }
   }
 
   currentDate=newDate;
+  formDate="";
+  formDirty=false;
+  existingTouched=false;
   await loadDay();
 });
 
