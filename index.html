@@ -387,14 +387,23 @@ async function remoteDay(date){
 }
 
 async function upsertDay(date,data){
-  const {error}=await supabaseClient
+  // Ne jamais laisser l'application rester bloquée indéfiniment sur
+  // « Attente de synchronisation ». La sauvegarde locale reste la source
+  // de sécurité si Supabase ne répond pas assez vite.
+  const request=supabaseClient
     .from("comptabilite_jours")
     .upsert({
       jour:date,
       donnees:data,
       updated_at:new Date().toISOString()
     },{onConflict:"jour"});
-  if(error)throw error;
+
+  const timeout=new Promise((_,reject)=>
+    setTimeout(()=>reject(new Error("TIMEOUT_SUPABASE")),8000)
+  );
+
+  const result=await Promise.race([request,timeout]);
+  if(result?.error)throw result.error;
 }
 
 /* ==========================================================
@@ -424,7 +433,15 @@ async function loadDay(){
         markLocalSynced(date);
         $("message").textContent="☁️ Journée synchronisée.";
         setStatus("✓ Synchronisé","ok");
-      }catch(e){console.error("Synchronisation locale:",e)}
+      }catch(e){
+        console.error("Synchronisation locale:",e);
+        // Les données sont déjà conservées sur le téléphone.
+        // Ne pas laisser un faux « attente » permanent à l'écran.
+        if(myToken===loadToken && $("date").value===date){
+          $("message").textContent="📱 Enregistré sur le téléphone — synchronisation cloud à réessayer.";
+          setStatus("📱 Enregistré localement", "wait");
+        }
+      }
     }
   }else{
     const remote=await remoteDay(date);
@@ -925,7 +942,7 @@ function scheduleSave(){
       setStatus("✓ Sauvegarde automatique","ok");
     }catch(error){
       console.error("Auto-save:",error);
-      setStatus("⚠️ En attente de connexion","wait");
+      setStatus("📱 Enregistré localement — cloud indisponible","wait");
     }
   },700);
 }
