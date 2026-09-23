@@ -735,14 +735,18 @@ async function sauverJour(date = currentDate, data = getFormData()) {
 function programmerSauvegarde() {
   clearTimeout(saveTimer);
 
-  currentDate = dateInput.value;
+  // On capture la date au moment de la saisie.
+  // Ainsi, si on passe rapidement de vendredi à samedi/dimanche/lundi,
+  // la sauvegarde en attente reste bien attachée au bon jour.
+  const dateToSave = dateInput.value;
+  currentDate = dateToSave;
   const data = getFormData();
-  putLocal(currentDate, data);
+  putLocal(dateToSave, data);
 
   setStatus("💾 Enregistrement local…", "wait");
 
   saveTimer = setTimeout(() => {
-    sauverJour(currentDate, data);
+    sauverJour(dateToSave, data);
   }, 700);
 }
 
@@ -997,6 +1001,21 @@ window.addEventListener("offline", () => {
 });
 
 dateInput.addEventListener("change", async () => {
+  const previousDate = currentDate;
+  const nextDate = dateInput.value;
+
+  // Si on change de jour juste après une saisie, on termine d'abord
+  // la sauvegarde du jour précédent pour éviter qu'elle soit perdue
+  // ou enregistrée sous le nouveau jour.
+  clearTimeout(saveTimer);
+  if (previousDate && previousDate !== nextDate) {
+    const pendingPrevious = getLocal(previousDate);
+    if (pendingPrevious && pendingPrevious.data) {
+      await sauverJour(previousDate, pendingPrevious.data);
+    }
+  }
+
+  currentDate = nextDate;
   await chargerJour();
   await chargerSemaine(currentDate);
   activerTempsReel();
